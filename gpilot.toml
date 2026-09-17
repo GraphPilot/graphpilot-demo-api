@@ -115,3 +115,26 @@ surrogate_key_header = true
 # called `key` is read as an identity and gets a surrogate key it should not have.
 [surrogate_key]
 names = ["id"]
+
+# Persisted operations, off by default in the proxy and on here because `docs/16-persisted-operations.md`
+# promises they work: a client sends a sha256 hash instead of the document, the edge resolves it
+# against the registry, and the answer caches exactly like the same operation sent in full.
+#
+# Without this section a request carrying a hash is answered `PERSISTED_QUERY_NOT_SUPPORTED` by a
+# guard that sits above the cache, so it never gets a `gp-cache` header at all. The documented
+# feature and the docs page were both non-functional in production until this landed, which is
+# what the system tests found.
+#
+# `enabled` alone, and the three switches beside it left at their defaults, is deliberate. It is
+# the combination a public API wants and the one no preset names: hashes resolve, free text still
+# runs (every other page in `docs/` sends whole documents), and only a push through the platform
+# fills the registry.
+#
+# Not `apq`: Automatic Persisted Queries would let any client write to the registry by sending a
+# document with its hash. That is a bandwidth optimisation with no security property, and on a
+# public demo it is an invitation.
+#
+# Not `only_registered`: that turns the registry into an allowlist and would refuse every free
+# text query, which is most of this repository's documentation.
+[persisted_query]
+enabled = true
