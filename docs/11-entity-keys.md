@@ -80,9 +80,20 @@ rather than read.
 - `--soft` marks the entry stale instead of evicting it, so the next request is served from the
   stale copy while a revalidation runs, rather than waiting for the origin. It is the gentler lever
   for data that is allowed to be a few seconds old.
-- A product's key reaches further than the product. `ActivityEntry` carries
-  `@surrogateKey(of: "productId")`, so a cached [activity feed](02-stale-window.md) that mentioned
-  `p01` is tagged `ActivityEntry:productId:p01` and the purge above evicts it too. That is the
-  point of a path key: one name, every answer that quoted the thing.
+- **A product's key does not reach a feed that mentioned the product.** `ActivityEntry` carries
+  `@surrogateKey(of: "productId")`, so a cached [activity feed](02-stale-window.md) naming `p01` is
+  tagged `ActivityEntry:productId:p01`. That is a different string from `Product:id:p01`, and a
+  purge matches keys exactly: the type name is part of the key, and nothing folds two type names
+  into one. The purge above leaves the feed exactly where it was.
+
+  Evicting both takes both keys, which the CLI accepts in one call:
+
+  ```sh
+  gpilot purge --service "$SERVICE" 'Product:id:p01' 'ActivityEntry:productId:p01'
+  ```
+
+  Or the feed's own static key, `activity`, for the whole feed at once. This is the trap worth
+  internalising: "it mentions the product, so purging the product clears it" is the intuition, and
+  it is wrong. Read the keys off `gp-surrogate-key` and purge the ones you see.
 - One product is the narrowest address in this schema. [Page 12](12-path-keys.md) is the next step
   up, and [page 13](13-static-keys.md) the coarsest.

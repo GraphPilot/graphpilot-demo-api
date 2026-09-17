@@ -1,8 +1,13 @@
 # Path keys
 
 **What this shows:** a key that names something other than the object it sits on. `Product` tags
-itself with its category's id as well as its own, so one purge evicts every cached answer about
-that category and nothing else.
+itself with its category's id as well as its own, so one purge evicts every cached **product** in
+that category and leaves the other categories alone.
+
+Note the word product. The key is `Product:category.id:audio`, and the type name in front of it is
+part of it: this reaches entries holding products, not every entry that mentions the audio
+category. A cached `categories` list carries `Category:id:audio` instead, and that is a different
+key. See the notes at the end.
 
 ```graphql
 type Product
@@ -35,7 +40,7 @@ ask p06   # desks
 ask p06
 ```
 
-`p01` through `p05` are audio, `p06` through `p10` are desks. Purge the whole audio category:
+`p01` through `p05` are audio, `p06` through `p10` are desks. Purge the audio products:
 
 ```sh
 gpilot purge --service "$SERVICE" 'Product:category.id:audio'
@@ -73,7 +78,19 @@ then shows the purge hitting one category and missing the other.
   product, one extra selection, one extra key. Keys are properties of the response, not of the
   schema in the abstract.
 - `Review` uses the same shape from the other direction: `@surrogateKey(of: "productId")` tags a
-  cached review with the product it belongs to, so purging a product also evicts the answers that
-  quoted its reviews.
+  cached review `Review:productId:p01`. Note the type name in front. That is **not** the same key
+  as `Product:id:p01`, so purging the product does not evict the reviews, and purging the reviews
+  does not evict the product. A key is matched as an exact string, type name included. To reach
+  both, name both:
+
+  ```sh
+  gpilot purge --service "$SERVICE" 'Product:id:p01' 'Review:productId:p01'
+  ```
+
+  The same applies to `Inventory:productId:p01` and to `ActivityEntry:productId:p01`. Four types
+  tag themselves with the same product id, under four different keys.
+- A static key is the one exception, and it is worth seeing the contrast. `catalogue` carries no
+  type name at all, so `Product` and `Category` genuinely share it and one purge reaches both. That
+  is what makes [static keys](13-static-keys.md) the coarse lever: no type prefix, no precision.
 - Where a path key would be right but the field is not selected, the honest fix is a static key
   instead. See [page 13](13-static-keys.md).
