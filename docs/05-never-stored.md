@@ -55,6 +55,18 @@ what it got. A `MISS` that stores carries no reason at all. A `MISS` that stores
 entry. `CACHE_SKIPPED_UNCACHEABLE_OPERATION` is the flat rule above it: only a query is ever
 written to the cache, whatever a mutation's annotations say.
 
+Read the prefix, not just the presence. The header carries two families, and they answer different
+questions:
+
+| Prefix | What happened | Goes with |
+| --- | --- | --- |
+| `CACHE_SKIPPED_*` | the cache was consulted, and refused to store what came back | `gp-cache: MISS` |
+| `CACHE_PASS_*` | the cache was never consulted at all | `gp-cache: PASS` |
+
+Either way nothing was stored: a pass never reaches a store attempt, so the two can never both
+apply. That is why the header's presence alone is still a reliable "this did not cache", and why
+the prefix is what tells you whether the decision was about the response or about the request.
+
 The two timestamps are the belt to those braces. A stored `now` would repeat itself.
 
 ## Notes
@@ -62,10 +74,11 @@ The two timestamps are the belt to those braces. A stored `now` would repeat its
 - Use `now` whenever you are unsure whether you are looking at a cached answer. Put it in the same
   operation as whatever you are testing and it will tell you, at the cost of making that operation
   uncacheable too, which is exactly why it is its own query here.
-- There is a fourth `gp-cache` value, `PASS`, which you will not see on these pages. It means the
-  cache was never consulted at all, for a reason that has nothing to do with the response: a
-  `cache.policy.bypass` expression, a client profile with `cache = "off"`, an `OPTIONS` preflight.
-  This demo configures none of those.
+- You will not see `PASS` on these pages, because it needs a configuration this demo does not have:
+  a `cache.policy.bypass` expression, a client profile with `cache = "off"`, an `OPTIONS` preflight,
+  or the cache being unreachable. When you do meet one, it looks like the responses above except
+  for the two values that matter: `gp-cache: PASS`, and a reason beginning `CACHE_PASS_` rather
+  than `CACHE_SKIPPED_`, naming which of those it was.
 - A mutation is never cached, but it is not inert either: the keys it carries are what evicts the
   queries that read the data it changed. See [entity keys](11-entity-keys.md).
 - After running the `setPrice` above, the reset endpoint puts the catalogue back. See
