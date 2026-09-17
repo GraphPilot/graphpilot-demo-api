@@ -1,3 +1,11 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/banner-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset=".github/assets/banner-light.svg">
+    <img alt="GraphPilot Demo API" src=".github/assets/banner-light.svg" width="640">
+  </picture>
+</p>
+
 # GraphPilot demo API
 
 A small GraphQL product catalogue whose only job is to show what every GraphPilot edge caching
