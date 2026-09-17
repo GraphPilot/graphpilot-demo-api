@@ -81,5 +81,5 @@ The two timestamps are the belt to those braces. A stored `now` would repeat its
   than `CACHE_SKIPPED_`, naming which of those it was.
 - A mutation is never cached, but it is not inert either: the keys it carries are what evicts the
   queries that read the data it changed. See [entity keys](11-entity-keys.md).
-- After running the `setPrice` above, the reset endpoint puts the catalogue back. See
-  [the index](README.md), which is also where the guard on it is explained.
+- The `setPrice` above really does change the data, and on a shared demo it changes it for
+  everyone. [The index](README.md) explains what resetting takes, and why you probably cannot.

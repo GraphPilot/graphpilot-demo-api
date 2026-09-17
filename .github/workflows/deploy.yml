@@ -1,0 +1,128 @@
+name: Deploy
+
+# The demo is a real GraphPilot service, so a deploy is two halves that have to both land: the
+# origin (a Cloudflare Worker) and the edge's copy of this repository's schema and `gpilot.toml`.
+# Shipping one without the other is the failure this workflow is arranged to avoid.
+on:
+    push:
+        branches: [main]
+    workflow_dispatch:
+
+# One deploy at a time. Two overlapping runs could publish the schema of one commit against the
+# worker of another, which is the edge caching by rules the origin does not serve.
+concurrency:
+    group: deploy
+    cancel-in-progress: false
+
+jobs:
+    deploy:
+        runs-on: ubuntu-latest
+        # Secrets and variables this job needs are listed in README.md under "Deploying it".
+        # Every one of them is named below rather than read implicitly, so a missing value fails
+        # a step that says what is missing instead of producing a half-configured service.
+        environment: production
+        steps:
+            - uses: actions/checkout@v5
+
+            - uses: pnpm/action-setup@v4
+              with:
+                  version: 9.15.0
+
+            - uses: actions/setup-node@v5
+              with:
+                  node-version: 26
+                  cache: pnpm
+
+            - run: pnpm install --frozen-lockfile
+
+            # Before anything is published. A schema that does not typecheck is a schema the edge
+            # would bake and then serve nothing against.
+            - name: Check
+              run: |
+                  pnpm lint
+                  pnpm typecheck
+                  pnpm test
+
+            # First, so the origin is serving the new code before the edge learns its schema. An
+            # edge baking rules for a field the origin does not serve yet is the worse order.
+            - name: Deploy the worker
+              env:
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+              run: pnpm exec wrangler deploy
+
+            # After the deploy, because `wrangler secret put` needs the worker to exist. On the
+            # very first run the worker is therefore live and unconfigured for a few seconds, and
+            # it answers 500 to everything while it is: that is the origin failing closed rather
+            # than serving unverified traffic, and the health check below is what proves it ended.
+            #
+            # Re-sent on every deploy so the deployed values and the GitHub secrets cannot drift.
+            # `--no-interactive` because the runner has no terminal.
+            - name: Push the worker secrets
+              env:
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                  SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+                  AUTH_PRIVATE_JWK: ${{ secrets.AUTH_PRIVATE_JWK }}
+              run: |
+                  set -euo pipefail
+                  if [ -z "${SIGNING_KEY}" ]; then
+                      echo "SIGNING_KEY is empty: the origin would answer 500 to every request." >&2
+                      exit 1
+                  fi
+                  printf '%s' "${SIGNING_KEY}" | pnpm exec wrangler secret put SIGNING_KEY
+                  # Optional, and deliberately so: without it the Durable Object generates a pair
+                  # once and every isolate reads that same one back, which is correct but lives
+                  # only in that object. Set it to own the key yourself and to be able to rotate.
+                  if [ -n "${AUTH_PRIVATE_JWK}" ]; then
+                      printf '%s' "${AUTH_PRIVATE_JWK}" | pnpm exec wrangler secret put AUTH_PRIVATE_JWK
+                  else
+                      echo "AUTH_PRIVATE_JWK not set: the Durable Object's own generated key stays in use."
+                  fi
+
+            # `/health` is unsigned and needs no credential, but it is served only once
+            # `SIGNING_KEY` is in place: the worker refuses every route with a 500 while the
+            # signature guard is on and the key is missing. So this one request proves both that
+            # the deploy landed and that the secret above reached it.
+            - name: Wait for the origin
+              env:
+                  ORIGIN_URL: ${{ vars.ORIGIN_URL }}
+              run: |
+                  set -euo pipefail
+                  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+                      code=$(curl -sS -o /dev/null -w '%{http_code}' "${ORIGIN_URL}/health" || echo 000)
+                      if [ "${code}" = "200" ]; then
+                          echo "origin healthy after ${attempt} attempt(s)"
+                          exit 0
+                      fi
+                      echo "attempt ${attempt}: /health answered ${code}"
+                      sleep 5
+                  done
+                  echo "the origin never answered 200 on /health; not publishing to the edge" >&2
+                  exit 1
+
+            - name: Install the gpilot CLI
+              run: |
+                  curl -fsSL get.graphpilot.io | sh
+                  echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+
+            # Schema and config in one command, which is what keeps the ordering rule satisfied
+            # without anybody having to think about it: the `[[cache.policy.vary]]` entries that
+            # derive `x-gp-organization` and `x-gp-role` land in the same deployment as the
+            # `@vary` annotation naming them. Published separately, schema first, every request
+            # to the service would be refused until the config caught up.
+            #
+            # No `gpilot auth login`: `GPILOT_TOKEN` in the environment replaces a profile rather
+            # than needing one, and the login asks for a profile name, which fails on a runner
+            # with "IO error: not a terminal".
+            - name: Publish the schema and config to the edge
+              env:
+                  GPILOT_TOKEN: ${{ secrets.GPILOT_TOKEN }}
+              run: |
+                  set -euo pipefail
+                  gpilot deploy \
+                      --service "${{ vars.GPILOT_SERVICE }}" \
+                      --schema src/schema.graphql \
+                      --config gpilot.toml \
+                      --no-interactive \
+                      --yes

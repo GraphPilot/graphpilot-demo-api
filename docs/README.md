@@ -53,20 +53,30 @@ strings. A token from anywhere else is refused at the edge.
 
 ### Starting from a known state
 
-Prices and reviews change as people try the mutations. Reset before a walkthrough that compares
-two answers:
+Prices and reviews change as people try the mutations, so a page that compares two answers is
+easier to follow from the seeded catalogue.
+
+`POST /admin/reset` restores it, and it is guarded, because an unauthenticated endpoint that throws
+away everyone's data is worse than no reset at all. Which guard depends on how the origin is
+running:
+
+| Origin | Guard on `/admin/reset` |
+| --- | --- |
+| deployed, signatures on | the origin signature. Only a signed request gets through, so only something holding the service's signing key can reset it. |
+| `REQUIRE_SIGNATURE=false` | `x-admin-token` must match `ADMIN_TOKEN`, and with `ADMIN_TOKEN` unset the reset is refused outright. |
+| local `pnpm start` | not served at all. It is a Worker route. Restart the process, which reseeds. |
+
+**So on a shared deployed demo you will not be resetting anything,** and that is deliberate: the
+guard is the same one protecting the API. The reset exists for the system-test suite, which holds
+the key, and for your own instance. If you are following these pages against a demo somebody else
+deployed, treat the data as shared and read the pages that compare two answers with that in mind,
+or run your own copy:
 
 ```sh
-curl -sS -X POST "$ORIGIN/admin/reset" -H "x-admin-token: $ADMIN_TOKEN"
+REQUIRE_SIGNATURE=false pnpm start
 ```
 
-Two things about this endpoint. It belongs in no real API: it exists so a scenario starts from the
-seeded catalogue instead of from whatever the last reader left behind. And it is guarded, by the
-origin signature where signatures are on and by `x-admin-token` where they are off, because an
-unauthenticated endpoint that throws away all the data is worse than no reset at all.
-
-It is a route on the deployed Worker. A local `pnpm start` does not serve it; restart the process
-instead, which reseeds.
+Nothing in the walkthroughs needs a reset to make its point. Only the exact prices do.
 
 ## The header vocabulary
 
