@@ -46,6 +46,18 @@ export interface Inventory {
     reservedAt: string | null;
 }
 
+export type ActivityKind = "PRICE_CHANGED" | "STOCK_RESERVED";
+
+/** One line of the activity feed, derived from the catalogue rather than recorded beside it: a
+ * price change moves a product's `updatedAt`, a reservation stamps its inventory. */
+export interface ActivityEntry {
+    productId: ProductId;
+    name: string;
+    kind: ActivityKind;
+    /** ISO 8601. */
+    at: string;
+}
+
 export interface ReviewDraft {
     productId: ProductId;
     author: string;
@@ -78,6 +90,11 @@ export interface CatalogueStore {
     reviews(productId: ProductId): Promise<Review[]>;
     inventory(productId: ProductId): Promise<Inventory>;
     renameCategory(id: CategoryId, name: string): Promise<Category>;
+
+    /** The newest `limit` entries, newest first, ties broken by product id so two identical
+     * requests never come back in two orders. A feed that reorders itself would be indistinguishable
+     * from a feed that was refreshed, which is exactly the distinction the stale window test makes. */
+    activity(limit: number): Promise<ActivityEntry[]>;
 }
 
 /** Thrown when a mutation or a lookup names something the catalogue does not hold. */

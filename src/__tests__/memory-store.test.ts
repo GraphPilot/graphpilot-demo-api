@@ -86,6 +86,32 @@ describe("MemoryStore", () => {
         await expect(store.search("nothing-matches-this")).resolves.toHaveLength(0);
     });
 
+    it("feeds the newest catalogue changes first, and no more than asked for", async () => {
+        const feed = await store.activity(5);
+
+        expect(feed).toHaveLength(5);
+        // The seed stamps each product a day later than the one before, so the last product is the
+        // newest thing in the catalogue.
+        expect(feed[0]).toMatchObject({ productId: "p20", kind: "PRICE_CHANGED" });
+        const timestamps = feed.map((entry) => entry.at);
+        expect([...timestamps].sort().reverse()).toEqual(timestamps);
+    });
+
+    it("puts a reservation at the top of the feed", async () => {
+        await store.reserveStock("p07", 1);
+        const feed = await store.activity(3);
+
+        expect(feed[0]).toMatchObject({
+            productId: "p07",
+            kind: "STOCK_RESERVED",
+            name: "Walnut Worktop",
+        });
+    });
+
+    it("returns the same feed twice for the same catalogue", async () => {
+        await expect(store.activity(10)).resolves.toEqual(await store.activity(10));
+    });
+
     it("restores the seed on reset", async () => {
         await store.setPrice("p01", 1);
         await store.reserveStock("p01", 2);

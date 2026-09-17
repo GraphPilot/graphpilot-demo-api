@@ -95,6 +95,24 @@ describe("DurableObjectStore", () => {
         expect(await store.search("   ")).toEqual([]);
     });
 
+    // The feed behind the short stale window. The two runtimes have to agree about it, because a
+    // system test measures the deployed one and the unit tests measure this one.
+    it("feeds the newest changes first, and a reservation lands at the top", async () => {
+        const store = storeNamed("activity");
+        const seeded = await store.activity(5);
+        expect(seeded).toHaveLength(5);
+        expect(seeded[0]).toMatchObject({ productId: "p20", kind: "PRICE_CHANGED" });
+
+        await store.reserveStock("p07", 1);
+        const after = await store.activity(3);
+        expect(after[0]).toMatchObject({ productId: "p07", kind: "STOCK_RESERVED" });
+    });
+
+    it("answers the same feed twice, so a repeated request is a repeated answer", async () => {
+        const store = storeNamed("activity-stable");
+        expect(await store.activity(10)).toEqual(await store.activity(10));
+    });
+
     it("answers null for an unknown product and refuses an unknown write", async () => {
         const store = storeNamed("missing");
         expect(await store.product("nope")).toBeNull();

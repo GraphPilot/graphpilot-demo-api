@@ -124,6 +124,44 @@ type Inventory @cacheControl(maxAge: 5, scope: PUBLIC) @surrogateKey(of: "produc
     reservedAt: String
 }
 
+# The stale window, close enough to watch.
+#
+# Every other stale window in this schema is measured in hours, which is the honest lifetime for a
+# catalogue and useless for showing the mechanism: nobody waits an hour to see what \`swr\` does. This
+# one is five seconds fresh and a minute stale, so the whole cycle fits inside a test run and inside
+# a reader's attention.
+#
+# What to watch. Send the same request three times. The first stores the answer and misses. A second
+# within five seconds is a plain hit. A third after six seconds, still inside the minute, is served
+# from the same stored entry although it has expired, while the edge fetches a fresh one behind it:
+# \`observedAt\` is unchanged, because the answer is the old one, and the request that follows the
+# revalidation carries a new \`observedAt\`. Serving the stale copy first is the point: the reader
+# waits for the cache, never for the origin.
+type Activity @cacheControl(maxAge: 5, scope: PUBLIC, swr: 60) @surrogateKey(static: "activity") {
+    # Stamped when a resolver runs, so an answer that came from the stored entry is recognizable:
+    # if this did not move, the origin was not reached.
+    """ISO 8601, the moment the origin produced this answer."""
+    observedAt: String!
+
+    entries: [ActivityEntry!]!
+}
+
+# Derived from the catalogue rather than recorded beside it: a price change moves a product's
+# \`updatedAt\`, a reservation stamps its inventory, and both surface here. So every mutation in this
+# schema changes this answer, which is what makes the feed worth a five second lifetime.
+type ActivityEntry @surrogateKey(of: "productId") {
+    productId: ID!
+    name: String!
+    kind: ActivityKind!
+    """ISO 8601."""
+    at: String!
+}
+
+enum ActivityKind {
+    PRICE_CHANGED
+    STOCK_RESERVED
+}
+
 # Private scope: one stored entry per subject. Two tokens never see each other's answer, which is
 # the property the system tests prove rather than assume.
 type Me @cacheControl(maxAge: 60, scope: PRIVATE) {
@@ -171,6 +209,12 @@ type Query {
     # Variables enter the cache key, so every term is its own entry. A short lifetime keeps the
     # long tail of one-off terms from filling the cache.
     search(term: String!): [Product!]! @cacheControl(maxAge: 60, scope: PUBLIC)
+
+    # The operation a test uses to watch an entry go stale: five seconds fresh, a minute stale, and
+    # its own key so a purge can address it without touching the catalogue's.
+    activity(first: Int = 5): Activity!
+        @cacheControl(maxAge: 5, scope: PUBLIC, swr: 60)
+        @surrogateKey(static: "activity")
 
     # Needs a verified token; without one it answers null.
     me: Me

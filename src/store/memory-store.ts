@@ -1,5 +1,6 @@
 import { seed } from "../data/seed.ts";
 import {
+    type ActivityEntry,
     type Catalogue,
     type CatalogueStore,
     type Category,
@@ -120,6 +121,33 @@ export class MemoryStore implements CatalogueStore {
         return copy(category);
     }
 
+    async activity(limit: number): Promise<ActivityEntry[]> {
+        const byProduct = new Map(this.#catalogue.products.map((product) => [product.id, product]));
+        const entries: ActivityEntry[] = [];
+
+        for (const product of this.#catalogue.products) {
+            entries.push({
+                productId: product.id,
+                name: product.name,
+                kind: "PRICE_CHANGED",
+                at: product.updatedAt,
+            });
+        }
+        for (const entry of this.#catalogue.inventory) {
+            const product = byProduct.get(entry.productId);
+            if (entry.reservedAt && product) {
+                entries.push({
+                    productId: product.id,
+                    name: product.name,
+                    kind: "STOCK_RESERVED",
+                    at: entry.reservedAt,
+                });
+            }
+        }
+
+        return entries.sort(newestFirst).slice(0, Math.max(0, limit));
+    }
+
     #find(id: ProductId): Product | undefined {
         return this.#catalogue.products.find((product) => product.id === id);
     }
@@ -135,4 +163,16 @@ export class MemoryStore implements CatalogueStore {
 
 function copy<T>(value: T): T {
     return { ...value };
+}
+
+/** Newest first, and two entries stamped in the same second are ordered by product id and then by
+ * kind, so the answer is a function of the catalogue and of nothing else. */
+function newestFirst(left: ActivityEntry, right: ActivityEntry): number {
+    if (left.at !== right.at) {
+        return left.at < right.at ? 1 : -1;
+    }
+    if (left.productId !== right.productId) {
+        return left.productId < right.productId ? -1 : 1;
+    }
+    return left.kind < right.kind ? -1 : 1;
 }

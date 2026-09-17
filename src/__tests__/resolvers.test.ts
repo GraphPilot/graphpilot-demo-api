@@ -20,6 +20,11 @@ function run(
     });
 }
 
+/** The activity answer, typed, so a test reads what it asserts on instead of casting twice. */
+function activityOf(result: ExecutionResult): { observedAt: string; entries: unknown[] } {
+    return result.data?.activity as { observedAt: string; entries: unknown[] };
+}
+
 /** Every test starts from the seed, so nothing accumulates across cases. */
 beforeEach(() => {
     store = new MemoryStore();
@@ -72,6 +77,42 @@ describe("queries", () => {
         });
 
         expect(result.data?.search).toEqual([{ name: "Field Recorder" }]);
+    });
+
+    // The operation that exists so a system test can watch an entry go stale within seconds. What
+    // it needs from the origin: five entries by default, and an `observedAt` that moves on every
+    // run, so an answer served from the stale entry is recognizable by an `observedAt` that did not.
+    it("feeds five entries and stamps when the origin produced them", async () => {
+        const result = await run("{ activity { observedAt entries { productId kind at } } }");
+
+        const activity = activityOf(result);
+        expect(result.errors).toBeUndefined();
+        expect(activity.entries).toHaveLength(5);
+        expect(Number.isNaN(Date.parse(activity.observedAt))).toBe(false);
+    });
+
+    it("takes first, and answers the same entries while nothing is written", async () => {
+        const one = activityOf(
+            await run("{ activity(first: 2) { observedAt entries { productId } } }"),
+        );
+        const two = activityOf(
+            await run("{ activity(first: 2) { observedAt entries { productId } } }"),
+        );
+
+        expect(one.entries).toHaveLength(2);
+        // Same entries, because nothing was written between the two runs. `observedAt` is what
+        // tells the two responses apart, and at the edge it is what tells a stale answer from a
+        // revalidated one.
+        expect(one.entries).toEqual(two.entries);
+    });
+
+    it("shows a write at the top of the feed on the very next read", async () => {
+        await run('mutation { reserveStock(id: "p05", count: 1) { available } }');
+        const result = await run("{ activity(first: 1) { entries { productId kind } } }");
+
+        expect(result.data?.activity).toMatchObject({
+            entries: [{ productId: "p05", kind: "STOCK_RESERVED" }],
+        });
     });
 
     it("answers now with a parseable timestamp", async () => {

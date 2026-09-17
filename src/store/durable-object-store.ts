@@ -2,6 +2,8 @@ import { DurableObject } from "cloudflare:workers";
 import { generateKeys } from "../auth/keys.ts";
 import { seed } from "../data/seed.ts";
 import {
+    type ActivityEntry,
+    type ActivityKind,
     type CatalogueStore,
     type Category,
     type CategoryId,
@@ -58,6 +60,14 @@ interface InventoryRow {
     product_id: string;
     available: number;
     reserved_at: string | null;
+}
+
+interface ActivityRow {
+    [column: string]: SqlStorageValue;
+    product_id: string;
+    name: string;
+    kind: string;
+    at: string;
 }
 
 const SCHEMA = `
@@ -280,6 +290,36 @@ export class CatalogueObject extends DurableObject<unknown> {
     }
 
     /**
+     * The activity feed, read out of the two tables that already record when something changed. No
+     * table of its own, so nothing can drift out of step with the catalogue it describes.
+     *
+     * The order is spelled out completely, ties included: a feed that comes back in two orders for
+     * two identical requests would look exactly like a feed that was refreshed, and the stale
+     * window test cannot afford that confusion.
+     */
+    async activity(limit: number): Promise<ActivityEntry[]> {
+        const rows = this.#sql
+            .exec<ActivityRow>(
+                `SELECT p.id AS product_id, p.name AS name, 'PRICE_CHANGED' AS kind, p.updated_at AS at
+                   FROM products p
+                 UNION ALL
+                 SELECT i.product_id AS product_id, p.name AS name, 'STOCK_RESERVED' AS kind, i.reserved_at AS at
+                   FROM inventory i JOIN products p ON p.id = i.product_id
+                  WHERE i.reserved_at IS NOT NULL
+                 ORDER BY at DESC, product_id ASC, kind ASC
+                 LIMIT ?`,
+                Math.max(0, limit),
+            )
+            .toArray();
+        return rows.map((row) => ({
+            productId: row.product_id,
+            name: row.name,
+            kind: row.kind as ActivityKind,
+            at: row.at,
+        }));
+    }
+
+    /**
      * The private JWK every isolate of this Worker mints tokens with, generated once and kept.
      * Without it each isolate would mint tokens against its own key pair, and the key set an edge
      * fetched from one isolate would refuse the tokens another isolate handed out.
@@ -432,6 +472,10 @@ export class DurableObjectStore implements CatalogueStore {
 
     renameCategory(id: CategoryId, name: string): Promise<Category> {
         return call(() => this.#stub.renameCategory(id, name));
+    }
+
+    activity(limit: number): Promise<ActivityEntry[]> {
+        return call(() => this.#stub.activity(limit));
     }
 
     /** Not part of the port: the token endpoint's key, kept next to the catalogue because a
