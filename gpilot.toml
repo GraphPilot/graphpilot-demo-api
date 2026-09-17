@@ -10,10 +10,18 @@
 # `allowed_algorithms` has no default and must not: the verifier is chosen by the token's own
 # `alg` header, so a provider that accepted anything would accept an HS256 token signed with the
 # public key as if it were a shared secret. Naming RS256 alone is what closes that.
+#
+# `allowed_issuers` and `allowed_audiences` are the demo's own name, twice, because it is both:
+# there is no identity provider behind it. `src/auth/claims.ts` mints with these exact strings and
+# verifies against them, so the two halves have to agree literally. They are not decoration: a
+# provider that checked neither would accept any RS256 token whose key happens to be in this key
+# set, which is the whole set of tokens this demo has ever minted for anyone who asked.
 [auth.providers.demo]
 type = "jwt"
 allowed_algorithms = ["RS256"]
 jwks_url = "https://demo-api.graphpilot.cloud/auth/jwks.json"
+allowed_issuers = ["graphpilot-demo-api"]
+allowed_audiences = ["graphpilot-demo-api"]
 
 # The second provider, and it is here to be watched rather than used.
 #

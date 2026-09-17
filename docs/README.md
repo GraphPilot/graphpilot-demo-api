@@ -47,17 +47,26 @@ TOKEN=$(curl -sS "$ORIGIN/auth/token" \
 The three fields become the three claims `gpilot.toml` reads: `sub` keys a private entry,
 `org_id` and `role` derive the two bucket headers. Nothing else in the token matters here.
 
+The token is issued by `graphpilot-demo-api` to the audience `graphpilot-demo-api`, since the demo
+is its own identity provider, and the JWT provider block in `gpilot.toml` names both of those
+strings. A token from anywhere else is refused at the edge.
+
 ### Starting from a known state
 
 Prices and reviews change as people try the mutations. Reset before a walkthrough that compares
 two answers:
 
 ```sh
-curl -sS -X POST "$ORIGIN/admin/reset"
+curl -sS -X POST "$ORIGIN/admin/reset" -H "x-admin-token: $ADMIN_TOKEN"
 ```
 
-This endpoint belongs in no real API. It exists so a scenario starts from the seeded catalogue
-instead of from whatever the last reader left behind.
+Two things about this endpoint. It belongs in no real API: it exists so a scenario starts from the
+seeded catalogue instead of from whatever the last reader left behind. And it is guarded, by the
+origin signature where signatures are on and by `x-admin-token` where they are off, because an
+unauthenticated endpoint that throws away all the data is worse than no reset at all.
+
+It is a route on the deployed Worker. A local `pnpm start` does not serve it; restart the process
+instead, which reseeds.
 
 ## The header vocabulary
 
@@ -77,8 +86,22 @@ Every page ends by naming a header. These are the ones that appear:
 because `gpilot.toml` says so; in a real service it is a debugging aid you switch on when you want
 it.
 
-One more, and it is not ours: `cf-cache-status`. If Cloudflare's own cache answered, you are not
-measuring GraphPilot's. Nothing on these pages should ever show a `cf-cache-status` of `HIT`.
+**The `gp-` spellings are the authoritative ones, and they are the only ones you will see.** This
+is worth stating because the bare names are the obvious guess and every one of them is wrong here:
+
+| You might look for | What is actually true |
+| --- | --- |
+| `age` | not emitted. The entry's age is `gp-cache-age`. |
+| `surrogate-key` | the origin's own inbound header. The edge reads it, folds its keys into `gp-surrogate-key`, and strips the original from your copy. |
+| `x-cache`, `x-cache-hits` | Fastly's, describing the origin fetch, which always passes. They said `MISS` beside our `HIT`, so they are stripped too. `gp-cache` is the answer. |
+
+All three come from one registry in the proxy
+(`gp-proxy/src/support/reserved_headers/strip_reserved_headers.rs`), which is also what the
+response scrub reads, so a name the proxy sets and a name it strips cannot drift apart.
+
+One header that is not ours and is not stripped: `cf-cache-status`. If Cloudflare's own cache
+answered, you are not measuring GraphPilot's. Nothing on these pages should ever show a
+`cf-cache-status` of `HIT`.
 
 ## Reading order
 

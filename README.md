@@ -12,9 +12,9 @@ it demonstrates and why.
 `docs/` walks through it one scenario at a time. Each page has a runnable curl, the answer it
 produces, and the response header that proves the claim. Start at [docs/README.md](docs/README.md).
 
-**This is a demo.** The data is in memory, there is a `POST /admin/reset` endpoint that throws it
-away and reseeds, and the demo mints its own tokens for anyone who asks. None of those three
-belongs in a real API. Everything else here is meant to be copied.
+**This is a demo.** The data is in memory, the deployed Worker has a `POST /admin/reset` endpoint
+that throws it away and reseeds, and the demo mints its own tokens for anyone who asks. None of
+those three belongs in a real API. Everything else here is meant to be copied.
 
 ## Run it
 
@@ -28,15 +28,18 @@ The server listens on `http://localhost:4000`:
 - `POST /graphql`, and `GET /graphql` for GraphiQL in a browser
 - `POST /auth/token` takes `{"sub": "...", "org": "...", "role": "..."}` and returns a signed RS256 token
 - `GET /auth/jwks.json` publishes the key that verifies it
-- `POST /admin/reset` restores the seeded catalogue
 - `GET /health`
 
 Node 26 or newer, which runs the TypeScript sources directly. No build step.
 
-Signature verification is on by default and will refuse everything you send by hand, because
-nothing local is signing. `REQUIRE_SIGNATURE=false pnpm start` turns it off for local work, with a
-warning on every request while it is off. Do not set it anywhere real. See
-[docs/15-origin-signature.md](docs/15-origin-signature.md).
+Signature verification guards `/graphql` and is on by default, so it will refuse everything you
+send by hand, because nothing local is signing. `REQUIRE_SIGNATURE=false pnpm start` turns it off
+for local work, with a warning on every request while it is off. Do not set it anywhere real. The
+other routes are unsigned on purpose, and
+[docs/15-origin-signature.md](docs/15-origin-signature.md) has the table saying which and why.
+
+A local run generates a key pair at startup, so restarting invalidates every token it had minted.
+That is fine locally and is not fine deployed: see the environment table below.
 
 Self-hosting instead: the `Dockerfile` is a single `node:26-alpine` stage with no build.
 
@@ -48,7 +51,9 @@ Self-hosting instead: the `Dockerfile` is a single `node:26-alpine` stage with n
 2. **Create a service** and set its origin to that URL.
 3. **Edit `gpilot.toml`.** One value is specific to where you deployed: `jwks_url` under
    `[auth.providers.demo]` has to name your origin's `/auth/jwks.json`. Everything else works as
-   written.
+   written, including `allowed_issuers` and `allowed_audiences`, which both name
+   `graphpilot-demo-api` because that is what `src/auth/claims.ts` mints with. Change one and you
+   have to change the other.
 4. **Deploy the configuration before the schema, or together with it.** The schema's `ORGANIZATION`
    scope names two headers that the two `[[cache.policy.vary]]` entries derive. An annotation
    naming a header no entry derives is refused on every request, so the entries have to exist
@@ -58,9 +63,18 @@ Self-hosting instead: the `Dockerfile` is a single `node:26-alpine` stage with n
    gpilot deploy
    ```
 
-5. **Take the signing key** GraphPilot issued for the service and give it to the origin as its
-   signing secret, so verification passes. Until you do, the edge's requests are refused with a
-   401 exactly as your own were.
+5. **Configure the origin's environment**, all of it, before pointing traffic at it:
+
+   | Variable | Why it matters |
+   | --- | --- |
+   | `SIGNING_KEY` | the signing key GraphPilot issued for the service. Until the origin holds it, the edge's own requests are refused with a 401 exactly as your own were. Required unless `REQUIRE_SIGNATURE=false`. |
+   | `AUTH_PRIVATE_JWK` | the RS256 key the demo signs tokens with. **Set this or the deployment is quietly broken:** without it, every cold start generates a fresh key pair, so tokens minted before it stop verifying and GraphPilot's cached copy of the key set stops matching. It logs a warning when it falls back, which a serverless runtime makes easy to miss. |
+   | `ADMIN_TOKEN` | the fallback guard on `POST /admin/reset`, used where signatures are off. |
+   | `REQUIRE_SIGNATURE` | leave it unset. `false` serves unverified requests and says so on every one. |
+
+   `AUTH_PRIVATE_JWK` and `jwks_url` are two halves of one key: rotate the first and redeploy, or
+   the edge keeps verifying against a key set the origin no longer signs with.
+
 6. **Walk the docs.** Export `EDGE`, `ORIGIN` and `SERVICE` as [docs/README.md](docs/README.md)
    describes, and start at page 1.
 

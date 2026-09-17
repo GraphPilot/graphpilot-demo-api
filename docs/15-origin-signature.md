@@ -19,6 +19,23 @@ be the real thing. `src/signing/` implements it:
 
 The key is the service's own signing key, issued by GraphPilot. It is never in this repository.
 
+## Which paths it covers
+
+`/graphql`, and deliberately nothing else. The other routes cannot be signed, and saying why is
+half the lesson:
+
+| Path | Signed | Why |
+| --- | --- | --- |
+| `/graphql` | yes | the API surface, and the only thing worth shielding |
+| `/auth/jwks.json` | no | GraphPilot fetches the key set itself, at deploy time. That is not a proxied request, so there is no signature on it and requiring one would make the service undeployable. A public key is public anyway. |
+| `/auth/token` | no | a demo affordance, reachable by anyone, because a reader needs a token before they have anything to send through the edge |
+| `/health` | no | probed by things that hold no key |
+| `/admin/reset` | yes, on the Worker | guarded by the signature where signatures are on, and by `x-admin-token` where they are off, so it is never simply open |
+
+An origin in production would have far fewer unsigned paths than this, because it would not be
+minting tokens for strangers. `/auth/jwks.json` and `/health` are the two that stay unsigned in any
+real setup.
+
 ## Send this
 
 Through the edge, which signs:
@@ -38,21 +55,32 @@ curl -sS -o/dev/null -w '%{http_code}\n' "$ORIGIN/graphql" \
   -d '{"query":"query Ping { now }"}'
 ```
 
+And, for the contrast, an unsigned path on the same origin:
+
+```sh
+curl -sS -o/dev/null -w '%{http_code}\n' "$ORIGIN/auth/jwks.json"
+```
+
 ## What comes back
 
 ```
 200
 401
+200
 ```
 
-The 401 body says which check failed: a missing signature, a malformed one, an unknown scheme
-version, or a timestamp outside the window. It never says what the signature should have been.
+The 401 is the whole feature. The 200 underneath it is the reminder that the guard is per path:
+the key set has to stay reachable or GraphPilot cannot deploy the service at all.
+
+The 401 body says only that this origin answers signed requests. Which check failed is logged and
+never returned, because telling a caller which part of its forgery was wrong is telling it how to
+fix the forgery.
 
 ## Which header proves it
 
 Not a response header this time, but a request one, and its absence: `graphpilot-signature` (with
 `graphpilot-timestamp` beside it) is on the request the edge forwards and on nothing you send by
-hand. The status code is the evidence.
+hand. The status code is the evidence: 200 through the edge, 401 around it, on the same path.
 
 ## Notes
 

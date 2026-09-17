@@ -68,4 +68,5 @@ The two timestamps are the belt to those braces. A stored `now` would repeat its
   This demo configures none of those.
 - A mutation is never cached, but it is not inert either: the keys it carries are what evicts the
   queries that read the data it changed. See [entity keys](11-entity-keys.md).
-- After running the `setPrice` above, `POST $ORIGIN/admin/reset` puts the catalogue back.
+- After running the `setPrice` above, the reset endpoint puts the catalogue back. See
+  [the index](README.md), which is also where the guard on it is explained.
