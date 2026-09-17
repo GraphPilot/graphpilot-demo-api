@@ -1,0 +1,109 @@
+# The demo's own issuer. `src/auth/` mints RS256 tokens and publishes the matching public key
+# at `/auth/jwks.json`, so the whole loop a reader has to understand is in this one repository:
+# the token they ask for, the key set it verifies against, and the claims the buckets below read.
+#
+# The platform reads `jwks_url` at deploy time and writes the key set to the edge store, so this
+# URL is fetched when a deployment is built and not on the request path. A key pair generated
+# fresh at every restart would therefore stop verifying without a redeploy, which is why the
+# deployed demo reads its key from configuration and only a local run generates one.
+#
+# `allowed_algorithms` has no default and must not: the verifier is chosen by the token's own
+# `alg` header, so a provider that accepted anything would accept an HS256 token signed with the
+# public key as if it were a shared secret. Naming RS256 alone is what closes that.
+[auth.providers.demo]
+type = "jwt"
+allowed_algorithms = ["RS256"]
+jwks_url = "https://demo-api.graphpilot.cloud/auth/jwks.json"
+
+# The second provider, and it is here to be watched rather than used.
+#
+# An API key is opaque: there is no signature and no key material, so this provider verifies
+# nothing and cannot. What it does is recognize the prefix as somebody else's credential, so the
+# JWT provider reading the same `Authorization` header does not turn the request away as a
+# malformed token. The origin stays the authority on whether the key is any good.
+#
+# The consequence is the lesson. An API key contributes no `demo.*` claim, so `cache.policy`
+# below derives nothing from it: no subject for a private entry, no organization and no role for
+# a bucketed one. A request carrying one is answered and never stored, reported as
+# `CACHE_SKIPPED_PRIVATE_WITHOUT_DISCRIMINATOR`. That is the correct answer rather than a defect,
+# and `docs/10-api-key-vs-jwt.md` walks it through.
+[auth.providers.apikey]
+type = "api_key"
+prefixes = ["demo_sk_"]
+
+[cache.policy]
+# One entry per person, keyed on the subject of a verified token. `type Me` in the schema is the
+# only thing that asks for `scope: PRIVATE`, because it is the only answer that genuinely belongs
+# to one caller.
+#
+# It is also the fallback: the proxy reads a missing scope as private, not as public, so a
+# `@cacheControl` hint that names no scope lands here. Anything meant to be shared has to say so.
+private = 'auth:demo.sub'
+
+# The organization bucket: one stored entry for everyone in one organization.
+#
+# This entry DERIVES the value; it does not decide what uses it. A response is keyed on this
+# header only when something names it, and in this repository that is the schema: the custom
+# `ORGANIZATION` value of `CacheControlScope` carries `@vary(names: ["x-gp-organization",
+# "x-gp-role"])`, and `type Report` asks for that scope.
+#
+# The ordering is the rule worth reading twice. This entry may land before the schema that names
+# it, because until something names the header it is inert. The other order does not work: a
+# `@vary` annotation naming a header that no `[[cache.policy.vary]]` entry derives is refused on
+# every request, so the cache would silently never fill. Configuration first, schema second.
+#
+# The `x-` prefix is not decoration. `gp-` is the proxy's own namespace and is stripped from every
+# client request, so a bucket header named `gp-organization` could never be backed by an entry.
+#
+# `pass_to_origin` is left at its default of `never`. This origin verifies the token and reads
+# `org_id` off it, so handing it a header restating a claim it already has would be one more thing
+# that can disagree with the token.
+[[cache.policy.vary]]
+name = "x-gp-organization"
+value = 'auth:demo.org_id'
+
+# The role, and it is here because an organization on its own is not a safe bucket.
+#
+# A cache hit never reaches the origin, so whatever the origin would have checked for the second
+# caller is not checked. Keyed on the organization alone, a `viewer` would be handed the report a
+# colleague with `admin` had populated. Adding the role makes the cache exactly as fine-grained as
+# the authorization behind it, and no finer: that is the whole rule, and `docs/08-buckets.md` shows
+# the two tokens that prove it.
+#
+# `pass_to_origin` stays `never`, for the reason the entry above gives.
+[[cache.policy.vary]]
+name = "x-gp-role"
+value = 'auth:demo.role'
+
+# The docs' curl examples, so a walkthrough can be told apart from whatever else is calling a
+# public demo. Every request in `docs/` sends `gp-client-name: demo-curl`, and
+# `gpilot requests --format json` then labels it.
+#
+# `gp-client-name` and `gp-client-version` are the two names inside the reserved `gp-` prefix that
+# a client is nevertheless meant to send, which is why a profile can match on them at all.
+#
+# This is a label, not a gate. The `when` reads a header, which is the client's own claim about
+# itself and something anyone can send; unknown clients stay served and simply carry no client
+# identity. A profile that opened something up would have to be written over `auth:` instead.
+[[client.profile]]
+name = "demo-curl"
+when = "header:gp-client-name == 'demo-curl'"
+version = "header:gp-client-version"
+
+# Off by default, and on here because this service exists to be inspected. Every docs page ends by
+# naming the response header that proves what it claims, and for the surrogate key pages that
+# header is `gp-surrogate-key`: the keys the entry was tagged with, which are the keys a purge
+# names. Reading them off the response beats constructing them by hand and purging a key nothing
+# was ever stored under.
+#
+# The keys are written to the entry and purge it either way. Only the header is optional, and it
+# is off by default because the list grows with the response, one entity key per object, and a
+# real API's clients should not pay for that on every response.
+[response]
+surrogate_key_header = true
+
+# Narrower than the default, which is `["id", "_id", "key"]`. Nothing in this schema carries an
+# object's identity as `_id` or `key`, and leaving them in means any field that happens to be
+# called `key` is read as an identity and gets a surrogate key it should not have.
+[surrogate_key]
+names = ["id"]
