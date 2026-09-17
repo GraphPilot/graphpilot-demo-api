@@ -84,7 +84,13 @@ jobs:
             # `SIGNING_KEY` is in place: the worker refuses every route with a 500 while the
             # signature guard is on and the key is missing. So this one request proves both that
             # the deploy landed and that the secret above reached it.
+            #
+            # Skipped when `ORIGIN_URL` is unset, which is the first deploy: nobody knows the
+            # origin's address until the worker has been deployed once. Set the variable
+            # afterwards and every later run gets the gate. A permanently unset variable silently
+            # buys nothing, so the skip says so in the log rather than passing quietly.
             - name: Wait for the origin
+              if: vars.ORIGIN_URL != ''
               env:
                   ORIGIN_URL: ${{ vars.ORIGIN_URL }}
               run: |
@@ -100,6 +106,12 @@ jobs:
                   done
                   echo "the origin never answered 200 on /health; not publishing to the edge" >&2
                   exit 1
+
+            - name: Note the skipped health gate
+              if: vars.ORIGIN_URL == ''
+              run: |
+                  echo "ORIGIN_URL is unset, so the origin was not checked before publishing to the edge."
+                  echo "Expected on the first deploy. Set the ORIGIN_URL variable to the deployed worker's address to turn the gate on."
 
             - name: Install the gpilot CLI
               run: |

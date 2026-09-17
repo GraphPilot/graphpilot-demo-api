@@ -149,7 +149,7 @@ Repository **variables**:
 | Variable | Needed before the first deploy | What it is |
 | --- | --- | --- |
 | `GPILOT_SERVICE` | yes | the service subdomain `gpilot deploy --service` names. |
-| `ORIGIN_URL` | yes | the deployed Worker's own URL, used for the health check between the two halves. No trailing slash. |
+| `ORIGIN_URL` | no | the deployed Worker's own URL, no trailing slash. Unset, the health gate between the two halves is skipped and the run says so. Nobody knows this address before the first deploy, so set it afterwards and every later run gets the gate. |
 
 The Worker's name comes from `wrangler.jsonc`, not from a variable, so renaming the service there
 renames what is deployed.
@@ -159,10 +159,15 @@ renames what is deployed.
 The first deploy is the awkward one, and it is worth knowing why rather than being surprised by it.
 `wrangler secret put` needs the Worker to exist, so the Worker is created before its secrets
 arrive, and for those few seconds it is live and answering 500 to every request. That is the origin
-failing closed, not a fault. The health check step is what proves the window closed: `/health`
-needs no credential but is served only once `SIGNING_KEY` is in place, so one 200 shows both that
-the deploy landed and that the secret reached it. If it never goes green the workflow stops without
-publishing anything to the edge.
+failing closed, not a fault.
+
+The health gate is what normally proves that window closed: `/health` needs no credential but is
+served only once `SIGNING_KEY` is in place, so one 200 shows both that the deploy landed and that
+the secret reached it, and a run that never goes green stops without publishing anything to the
+edge. It needs `ORIGIN_URL`, and on the first deploy nobody knows that address yet, which is why
+the step is skipped when the variable is unset rather than blocking the deploy that would produce
+the answer. The run logs the skip. Set `ORIGIN_URL` once the Worker is live and every later deploy
+is gated.
 
 Nothing here creates the Cloudflare or GraphPilot side for you. The service, the token and the
 hostnames are set up once by a human, and `jwks_url` in `gpilot.toml` still carries a placeholder
