@@ -168,6 +168,24 @@ Nothing here creates the Cloudflare or GraphPilot side for you. The service, the
 hostnames are set up once by a human, and `jwks_url` in `gpilot.toml` still carries a placeholder
 until they are.
 
+## The one test worth stealing
+
+`src/__tests__/cache-control-coverage.test.ts` walks the SDL and fails on the two annotation
+mistakes that are invisible in review and silent in production:
+
+- A **composite type with no `@cacheControl`**, reached from a field that does not inherit one. Such
+  a field resolves to the default lifetime, and the default is zero unless the directive declaration
+  gives `maxAge` one. A response lives for the shortest lifetime in everything it selects, so a
+  single unruled type makes every response that touches it uncacheable. Nothing errors, nothing is
+  logged, the cache simply never fills.
+- A **field-level `@cacheControl` that leaves out `scope`** while the type it returns states one. A
+  field's hint replaces the return type's rather than merging with it, and a hint naming no scope is
+  read as private, so a public answer is stored once per caller.
+
+Both have now been made in three different schemas, including this one. The test needs nothing but
+`graphql` and your SDL, and its failure message names the type, the field and the consequence. Copy
+the file.
+
 ## What is where
 
 | Path | What it holds |
@@ -180,6 +198,7 @@ until they are.
 | `src/store/durable-object-store.ts` | the adapter the deployment uses: one Durable Object over SQLite |
 | `src/data/seed.ts` | 20 deterministic products, with categories, reviews and inventory |
 | `src/resolvers/` | one file per type |
+| `src/__tests__/cache-control-coverage.test.ts` | walks the SDL and fails on an unruled composite type or a dropped scope |
 | `src/auth/` | the token endpoint, the JWKS endpoint, and the claim shapes the buckets read |
 | `src/signing/` | origin signature verification, runtime agnostic |
 | `src/schema.ts` | `createSchema(store)`, the executable schema |

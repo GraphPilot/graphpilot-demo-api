@@ -78,7 +78,11 @@ type Product
     # The short field that caps the long response: a query selecting `inventory` alongside the rest
     # of the product is stored for 5 seconds, not for an hour. The lowest lifetime in the selection
     # wins over the whole answer.
-    inventory: Inventory! @cacheControl(maxAge: 5)
+    #
+    # The scope is repeated here because a field's hint replaces the return type's, rather than
+    # adding to it: without it this would say nothing about audience, and a hint that says nothing
+    # is read as private, so the whole product answer would be stored once per caller.
+    inventory: Inventory! @cacheControl(maxAge: 5, scope: PUBLIC)
 
     reviews: [Review!]!
 }
@@ -94,7 +98,10 @@ type Category
 
     # `inheritMaxAge` is the opposite of the `inventory` field above: instead of capping the answer
     # at the product's own hour, the list keeps the category's day.
-    products: [Product!]! @cacheControl(inheritMaxAge: true)
+    #
+    # And the scope again, for the same reason: this hint replaces `Product`'s, so leaving it out
+    # would drop the `PUBLIC` written there and store a public catalogue per caller.
+    products: [Product!]! @cacheControl(inheritMaxAge: true, scope: PUBLIC)
 }
 
 # A review is public and cheap to re-fetch, and carries the product's key so purging a product
@@ -140,12 +147,25 @@ type Activity @cacheControl(maxAge: 5, scope: PUBLIC, swr: 60) @surrogateKey(sta
     """ISO 8601, the moment the origin produced this answer."""
     observedAt: String!
 
-    entries: [ActivityEntry!]!
+    # `inheritMaxAge` rather than a second copy of the numbers on `ActivityEntry`: the window is
+    # stated once, on the feed, and the entries keep whatever it says. Two copies of `maxAge: 5,
+    # swr: 60` would be two places to change and one place to forget.
+    #
+    # `scope` is written here as well, and it has to be. A field's own hint replaces the return
+    # type's hint, it is not merged with it, so this annotation hides `ActivityEntry` entirely. A
+    # hint that names no scope is read as private, which would quietly give this public feed one
+    # stored entry per caller.
+    entries: [ActivityEntry!]! @cacheControl(inheritMaxAge: true, scope: PUBLIC)
 }
 
 # Derived from the catalogue rather than recorded beside it: a price change moves a product's
 # `updatedAt`, a reservation stamps its inventory, and both surface here. So every mutation in this
 # schema changes this answer, which is what makes the feed worth a five second lifetime.
+#
+# No `@cacheControl` here on purpose, and it is safe only because the field above inherits. A
+# composite type with no hint, reached from a field that does not inherit, resolves to the default
+# lifetime, which is zero, and one such field makes the whole response uncacheable. That is what
+# `src/__tests__/cache-control-coverage.test.ts` walks the schema for.
 type ActivityEntry @surrogateKey(of: "productId") {
     productId: ID!
     name: String!
@@ -226,7 +246,11 @@ type Query {
 ####################################################################################################
 # Mutations
 #
-# Never stored. `maxAge: 0` on the type says so once, so no individual write has to remember.
+# Never stored, and the annotation sits on each field rather than on the type. A hint on a type is
+# read when something RETURNS that type, and nothing returns `Mutation`, so `type Mutation
+# @cacheControl(maxAge: 0)` would be decorative: every write would resolve the hint on the type it
+# returns instead, and `setPrice` would inherit `Product`'s hour.
+#
 # They exist so a purge has something to prove: change a price, then watch the cached answer.
 ####################################################################################################
 
@@ -237,9 +261,9 @@ input ReviewDraft {
     rating: Int!
 }
 
-type Mutation @cacheControl(maxAge: 0) {
-    setPrice(id: ID!, price: Int!): Product!
-    addReview(input: ReviewDraft!): Review!
-    reserveStock(id: ID!, count: Int!): Inventory!
-    renameCategory(id: ID!, name: String!): Category!
+type Mutation {
+    setPrice(id: ID!, price: Int!): Product! @cacheControl(maxAge: 0)
+    addReview(input: ReviewDraft!): Review! @cacheControl(maxAge: 0)
+    reserveStock(id: ID!, count: Int!): Inventory! @cacheControl(maxAge: 0)
+    renameCategory(id: ID!, name: String!): Category! @cacheControl(maxAge: 0)
 }
