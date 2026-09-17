@@ -118,7 +118,7 @@ answered, you are not measuring GraphPilot's. Nothing on these pages should ever
 **Lifetime: how long an answer lives**
 
 1. [MISS, then HIT](01-miss-then-hit.md) - the whole loop, on one product.
-2. [The stale window](02-stale-window.md) - `swr`, and why nobody waits for the origin.
+2. [The stale window](02-stale-window.md) - `swr` on the activity feed, five seconds fresh and a minute stale, so the cycle is watchable.
 3. [A short field caps the whole response](03-short-field-caps-the-response.md) - `inventory` at five seconds.
 4. [`inheritMaxAge`](04-inherit-max-age.md) - the opposite move: a child that keeps its parent's lifetime.
 5. [Never stored](05-never-stored.md) - `now` and every mutation, the reference point for "fresh".
