@@ -1,0 +1,17 @@
+{
+    // The same sources, under the Workers runtime's types instead of Node's. The two type sets
+    // cannot share one program: both declare `Request`, `Response` and `fetch`, and they disagree.
+    //
+    // Checking the core twice is the point. `src/node.ts` and the node-pool tests are the only
+    // things excluded, so every other file has to compile with no Node globals in sight, which is
+    // the constraint the core was written under and the one a reader would otherwise take on trust.
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "lib": ["ES2023"],
+        // `src/worker-configuration.d.ts` carries the runtime types and the bindings; regenerate it
+        // with `wrangler types src/worker-configuration.d.ts` after changing `wrangler.jsonc`.
+        "types": ["@cloudflare/vitest-plugin/types"]
+    },
+    "include": ["src/**/*.ts"],
+    "exclude": ["src/node.ts", "src/__tests__/*.test.ts"]
+}

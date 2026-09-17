@@ -18,5 +18,13 @@
         "skipLibCheck": true,
         "noEmit": true
     },
-    "include": ["src/**/*.ts", "vitest.config.ts"]
+    "include": ["src/**/*.ts", "vitest.config.ts"],
+    // The Workers files are checked by `tsconfig.worker.json`, under the Workers types. Node's
+    // types and the runtime's disagree about `Request`, so they cannot share one program.
+    "exclude": [
+        "src/worker.ts",
+        "src/store/durable-object-store.ts",
+        "src/worker-configuration.d.ts",
+        "src/__tests__/workers"
+    ]
 }

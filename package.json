@@ -12,11 +12,12 @@
     "scripts": {
         "dev": "node --watch src/node.ts",
         "start": "node src/node.ts",
-        "build": "node scripts/generate-type-defs.mjs && tsc --noEmit",
+        "build": "node scripts/generate-type-defs.mjs && tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
         "sdl": "node scripts/generate-type-defs.mjs",
         "test": "vitest run",
-        "typecheck": "tsc --noEmit",
-        "lint": "biome check ."
+        "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
+        "lint": "biome check .",
+        "dev:worker": "wrangler dev"
     },
     "dependencies": {
         "graphql": "17.0.2",
@@ -25,8 +26,10 @@
     },
     "devDependencies": {
         "@biomejs/biome": "2.5.14",
+        "@cloudflare/vitest-plugin": "1.1.11",
         "@types/node": "26.6.1",
         "typescript": "7.0.2",
-        "vitest": "5.0.1"
+        "vitest": "4.1.11",
+        "wrangler": "4.133.0"
     }
 }

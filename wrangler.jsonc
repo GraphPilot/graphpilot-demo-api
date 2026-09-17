@@ -1,0 +1,28 @@
+{
+    // Wrangler 4 reads JSONC first, so this is the file `wrangler dev`, `wrangler deploy` and the
+    // Vitest pool all pick up without being told where to look.
+    "$schema": "./node_modules/wrangler/config-schema.json",
+    "name": "graphpilot-demo-api",
+    "main": "src/worker.ts",
+    // Pinned. Raising it changes runtime behaviour, so it moves only when someone means it to.
+    "compatibility_date": "2026-09-17",
+    "observability": { "enabled": true },
+
+    // One Durable Object holds the whole catalogue. The worker always addresses the same instance
+    // by name, so a write and the read after it meet the same SQLite database and the demo can
+    // honestly claim "the origin serves the new value on the very next read".
+    "durable_objects": {
+        "bindings": [{ "name": "CATALOGUE", "class_name": "CatalogueObject" }]
+    },
+    "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CatalogueObject"] }],
+
+    // Secrets are set with `wrangler secret put`, never here: this repository is public.
+    // SIGNING_KEY       the per-service signing key the platform issues, so the origin can tell an
+    //                   edge request from anyone else's
+    // AUTH_PRIVATE_JWK  the RSA private JWK the demo mints tokens with. Optional: without it the
+    //                   Durable Object generates one and keeps it, so every isolate agrees.
+    // ADMIN_TOKEN       only consulted when REQUIRE_SIGNATURE is false, for a local run
+    "vars": {
+        "REQUIRE_SIGNATURE": "true"
+    }
+}

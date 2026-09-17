@@ -6,7 +6,7 @@
         "useIgnoreFile": true
     },
     "files": {
-        "includes": ["src/**/*.ts", "*.ts", "*.json"]
+        "includes": ["src/**/*.ts", "*.ts", "*.json", "!src/worker-configuration.d.ts"]
     },
     "formatter": {
         "enabled": true,
