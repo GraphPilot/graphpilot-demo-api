@@ -61,7 +61,7 @@ uncacheable, it means one entry each.
 
 ## Notes
 
-- Send the same query with no token at all and the answer is `gp-cache: MISS` with
+- Send the same query with no token at all and the answer is `gp-cache: PASS` with
   `gp-cache-reason: CACHE_SKIPPED_PRIVATE_WITHOUT_DISCRIMINATOR`. That is the correct refusal: with
   no subject there is no key that could safely hold the answer, so nothing is stored rather than
   something being stored under a key everyone shares.

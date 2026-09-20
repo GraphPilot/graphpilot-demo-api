@@ -49,9 +49,10 @@ allowed to repeat itself, and it does.
 
 ## Which header proves it
 
-`gp-cache`. `MISS` means the edge went to the origin; `HIT` means it did not go anywhere. That the
-`MISS` also stored the answer is visible as an absence: no `gp-cache-reason` header. A `MISS` that
-kept nothing always says why, which is [page 5](05-never-stored.md).
+`gp-cache`. `MISS` means the edge went to the origin and stored what it got; `HIT` means it did not
+go anywhere. A `MISS` is therefore already the whole claim, and it never carries a
+`gp-cache-reason`. When the edge keeps nothing the status is `PASS`, and that always says why,
+which is [page 5](05-never-stored.md).
 
 If you want to see the age climb, run the request a third and fourth time and watch `gp-cache-age`
 grow and `gp-cache-remaining` shrink by the same number of seconds.
