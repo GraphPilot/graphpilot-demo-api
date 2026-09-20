@@ -103,8 +103,8 @@ labelled.
 - **Selecting `entries` changes the answer, and not in a small way.** `ActivityEntry` carries a
   `@surrogateKey` but no `@cacheControl`, and a composite type with no lifetime of its own resolves
   to the schema's default, which is zero. Zero is the minimum over the selection, so
-  `activity { entries { name } }` is not cached at all: `gp-cache-reason: CACHE_SKIPPED_NO_MAX_AGE`,
-  every time. It is the same rule as [page 3](03-short-field-caps-the-response.md), with the
+  `activity { entries { name } }` is not cached at all: `gp-cache: PASS` with
+  `gp-cache-reason: CACHE_SKIPPED_NO_MAX_AGE`, every time. It is the same rule as [page 3](03-short-field-caps-the-response.md), with the
   short lifetime arriving by omission rather than by choice, and it is the single easiest way to
   make a thoroughly annotated schema cache nothing. Run it once, see the reason code, and remember
   the shape.

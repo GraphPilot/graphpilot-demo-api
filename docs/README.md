@@ -84,8 +84,8 @@ Every page ends by naming a header. These are the ones that appear:
 
 | Header | What it says |
 | --- | --- |
-| `gp-cache` | `MISS`, `HIT`, `STALE` or `PASS`. The one header that answers "was this stored". |
-| `gp-cache-reason` | Why nothing was stored, in one of two families. `CACHE_SKIPPED_*` is the cache consulted and the answer refused; `CACHE_PASS_*` is the cache never consulted. Absent on a hit, and absent on a miss that stored. |
+| `gp-cache` | `MISS`, `HIT`, `STALE` or `PASS`. The one header that answers "was this stored": `MISS` went to the origin and stored the answer, `PASS` stored nothing. |
+| `gp-cache-reason` | Why nothing was stored. Present on every `PASS` and on nothing else. The prefix says where the decision fell: `CACHE_PASS_*` before the cache was consulted, `CACHE_SKIPPED_*` after the origin answered. |
 | `gp-cache-age` | Seconds since the entry was stored. Counts up across hits on one entry. |
 | `gp-cache-max-age` | The fresh lifetime the entry was given, in seconds. The schema's `maxAge`, after the whole selection has been minimised over. |
 | `gp-cache-remaining` | Seconds of freshness left. `gp-cache-max-age` minus `gp-cache-age`. |

@@ -62,7 +62,7 @@ gp-cache: HIT
 With an API key, every time:
 
 ```
-gp-cache: MISS
+gp-cache: PASS
 gp-cache-reason: CACHE_SKIPPED_PRIVATE_WITHOUT_DISCRIMINATOR
 ```
 
