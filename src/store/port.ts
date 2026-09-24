@@ -95,7 +95,41 @@ export interface CatalogueStore {
      * requests never come back in two orders. A feed that reorders itself would be indistinguishable
      * from a feed that was refreshed, which is exactly the distinction the stale window test makes. */
     activity(limit: number): Promise<ActivityEntry[]>;
+
+    /**
+     * Count one attempt against a requested transient failure, and say whether this attempt fails.
+     *
+     * The counter is why this is in the store rather than in the worker. An origin retry happens
+     * inside one client request: the edge asks, is refused, waits, and asks again with byte-identical
+     * bytes. The two attempts carry nothing that tells them apart, so the only way the origin can
+     * fail the first and answer the second is to remember that it already refused one. Module-scope
+     * state cannot promise that, because the second attempt may land in another isolate, which is
+     * the same reason the catalogue lives here.
+     *
+     * Returns `true` while fewer than `times` attempts have been refused for this nonce, counting
+     * this one, and `false` from then on. A nonce nobody has used starts at zero, so the first
+     * `times` attempts fail and everything after succeeds.
+     *
+     * Rows are pruned by age rather than on success: a caller that asks for two failures and then
+     * gives up would otherwise leave its row behind forever, and this runs on a public demo.
+     */
+    consumeFault(nonce: string, times: number): Promise<boolean>;
 }
+
+/**
+ * How long a fault counter is remembered.
+ *
+ * Long enough to outlast any retry sequence the platform permits (a request may spend at most 120
+ * seconds at the edge, backoff included) and short enough that the table stays small without a
+ * scheduled job. A nonce older than this is indistinguishable from one that was never used.
+ */
+export const FAULT_TTL_MS = 10 * 60 * 1000;
+
+/** The longest nonce accepted, so a public endpoint cannot be used to store arbitrary text. */
+export const FAULT_NONCE_MAX_LENGTH = 128;
+
+/** The most attempts one nonce may be asked to fail, so a caller cannot ask the origin to stay down. */
+export const FAULT_TIMES_MAX = 5;
 
 /** Thrown when a mutation or a lookup names something the catalogue does not hold. */
 export class NotFoundError extends Error {

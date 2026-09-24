@@ -3,6 +3,7 @@ import { claimsFromAuthorization, InvalidTokenError } from "./auth/claims.ts";
 import { handleJwksRequest } from "./auth/jwks-endpoint.ts";
 import { type DemoKeys, keysFromPrivateJwk } from "./auth/keys.ts";
 import { handleTokenRequest } from "./auth/token-endpoint.ts";
+import { faultFromHeaders } from "./fault.ts";
 import type { DemoContext } from "./resolvers/index.ts";
 import { createSchema } from "./schema.ts";
 import { verifyOriginSignature } from "./signing/verify.ts";
@@ -178,6 +179,24 @@ export default {
 
         if (path !== "/graphql") {
             return json(404, { error: `nothing is served at ${path}` });
+        }
+
+        // The requested transient failure, decided here because it has to be decided before the
+        // body is parsed: a gateway status is the thing under test, and a GraphQL error would be a
+        // different promise entirely. It sits behind the signature guard above, so only a request
+        // GraphPilot signed can ask for it.
+        const fault = faultFromHeaders(request.headers);
+        if (fault) {
+            const refuse = await new DurableObjectStore(env.CATALOGUE).consumeFault(
+                fault.nonce,
+                fault.times,
+            );
+            if (refuse) {
+                return json(fault.status, {
+                    error: "the demo origin was asked to refuse this attempt",
+                    nonce: fault.nonce,
+                });
+            }
         }
 
         // Claims are resolved before Yoga runs, so a token that does not verify is answered 401

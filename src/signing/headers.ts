@@ -22,7 +22,10 @@ export interface SignatureHeaders {
     timestamp: string;
 }
 
-function read(source: HeaderSource, name: string): string | null {
+/** One header off either shape, or null when it is absent. Exported because `HeaderSource` is
+ * the repository's answer to "this runs on Node and on Workers", and anything else reading a
+ * request header needs the same two-shape lookup rather than a second copy of it. */
+export function readHeader(source: HeaderSource, name: string): string | null {
     if (source instanceof Headers) {
         return source.get(name);
     }
@@ -42,8 +45,8 @@ export function readSignatureHeaders(source: HeaderSource): SignatureHeaders | n
         [SIGNATURE_HEADER, TIMESTAMP_HEADER],
         [LEGACY_SIGNATURE_HEADER, LEGACY_TIMESTAMP_HEADER],
     ] as const) {
-        const signature = read(source, signatureName);
-        const timestamp = read(source, timestampName);
+        const signature = readHeader(source, signatureName);
+        const timestamp = readHeader(source, timestampName);
         if (signature !== null && timestamp !== null) {
             return { signature, timestamp };
         }

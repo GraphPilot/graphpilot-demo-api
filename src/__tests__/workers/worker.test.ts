@@ -234,4 +234,41 @@ describe("the worker", () => {
         const response = await call(new Request(`${ORIGIN}/nope`), envWith({}));
         expect(response.status).toBe(404);
     });
+
+    it("refuses the attempts a request asked it to, then answers the next one", async () => {
+        // The end-to-end shape the edge's retry needs, and the reason the counter lives in the
+        // Durable Object: the two attempts of a retry are byte-identical, so nothing on the request
+        // tells them apart and only something remembered between them can.
+        //
+        // Run through the worker rather than against the store, because the decision has to be made
+        // before the body is parsed. A fault that only worked once Yoga had run would produce a
+        // GraphQL error, which is a different promise with a different observable.
+        const nonce = `worker-retry-${crypto.randomUUID()}`;
+        const ask = () =>
+            call(
+                post(
+                    "/graphql",
+                    { query: "{ categories { id } }" },
+                    { "x-demo-fail-nonce": nonce, "x-demo-fail-times": "2" },
+                ),
+                envWith({}),
+            );
+
+        expect((await ask()).status).toBe(503);
+        expect((await ask()).status).toBe(503);
+
+        const answered = await ask();
+        expect(answered.status, "the third attempt is past the count it was asked for").toBe(200);
+        const payload = (await answered.json()) as { data?: { categories?: unknown[] } };
+        expect(payload.data?.categories?.length).toBe(seed().categories.length);
+    });
+
+    it("answers normally for a request that asked for nothing", async () => {
+        // The control. Without it, a worker that refused everything would pass the test above.
+        const response = await call(
+            post("/graphql", { query: "{ categories { id } }" }),
+            envWith({}),
+        );
+        expect(response.status).toBe(200);
+    });
 });
