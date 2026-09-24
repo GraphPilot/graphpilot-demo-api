@@ -5,6 +5,7 @@ import {
     type CatalogueStore,
     type Category,
     type CategoryId,
+    FAULT_TTL_MS,
     type Inventory,
     type Money,
     NotFoundError,
@@ -26,6 +27,10 @@ import {
 export class MemoryStore implements CatalogueStore {
     #catalogue: Catalogue;
     readonly #now: () => Date;
+
+    /** Requested transient failures, by nonce. Ephemeral by nature: a counter that outlived the
+     * request sequence it belongs to would refuse an attempt nobody asked to have refused. */
+    readonly #faults = new Map<string, { refused: number; firstSeen: number }>();
 
     constructor(now: () => Date = () => new Date()) {
         this.#catalogue = seed();
@@ -150,6 +155,27 @@ export class MemoryStore implements CatalogueStore {
 
     #find(id: ProductId): Product | undefined {
         return this.#catalogue.products.find((product) => product.id === id);
+    }
+
+    async consumeFault(nonce: string, times: number): Promise<boolean> {
+        const now = this.#now().getTime();
+
+        // Pruned on the way in rather than on a timer, because this adapter has nowhere to hang a
+        // timer and the map is only ever as large as the nonces used in the last ten minutes.
+        for (const [key, entry] of this.#faults) {
+            if (now - entry.firstSeen > FAULT_TTL_MS) {
+                this.#faults.delete(key);
+            }
+        }
+
+        const entry = this.#faults.get(nonce) ?? { refused: 0, firstSeen: now };
+        if (entry.refused >= times) {
+            this.#faults.set(nonce, entry);
+            return false;
+        }
+        entry.refused += 1;
+        this.#faults.set(nonce, entry);
+        return true;
     }
 
     #require(id: ProductId): Product {

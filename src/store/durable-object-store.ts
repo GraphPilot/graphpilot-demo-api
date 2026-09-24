@@ -7,6 +7,7 @@ import {
     type CatalogueStore,
     type Category,
     type CategoryId,
+    FAULT_TTL_MS,
     type Inventory,
     type Money,
     NotFoundError,
@@ -62,6 +63,13 @@ interface InventoryRow {
     reserved_at: string | null;
 }
 
+interface FaultRow {
+    [column: string]: SqlStorageValue;
+    nonce: string;
+    refused: number;
+    first_seen: number;
+}
+
 interface ActivityRow {
     [column: string]: SqlStorageValue;
     product_id: string;
@@ -95,6 +103,11 @@ CREATE TABLE IF NOT EXISTS inventory (
     product_id TEXT PRIMARY KEY,
     available INTEGER NOT NULL,
     reserved_at TEXT
+);
+CREATE TABLE IF NOT EXISTS faults (
+    nonce TEXT PRIMARY KEY,
+    refused INTEGER NOT NULL,
+    first_seen INTEGER NOT NULL
 );
 `;
 
@@ -334,6 +347,46 @@ export class CatalogueObject extends DurableObject<unknown> {
         return fresh;
     }
 
+    /**
+     * Count one attempt against a requested transient failure, and say whether this attempt fails.
+     *
+     * The whole point of doing this here rather than in the worker is that a Durable Object
+     * serializes its calls and its writes land before the call returns. An origin retry replays
+     * byte-identical bytes, so the two attempts are indistinguishable to the origin except through
+     * something remembered between them, and a counter that two isolates disagreed about would
+     * refuse both attempts or neither.
+     *
+     * `reset` does not clear this table, for the reason it does not clear the key pair either:
+     * restoring the catalogue in the middle of somebody's retry sequence must not change what that
+     * sequence does.
+     */
+    async consumeFault(nonce: string, times: number): Promise<boolean> {
+        const now = Date.now();
+
+        // Pruned on the way in. A caller that asks for two failures and then gives up leaves its
+        // row behind, and this runs on a public demo, so nothing may accumulate without a bound.
+        this.#sql.exec("DELETE FROM faults WHERE first_seen < ?", now - FAULT_TTL_MS);
+
+        const existing = this.#sql
+            .exec<FaultRow>("SELECT * FROM faults WHERE nonce = ?", nonce)
+            .toArray()[0];
+
+        if (existing && existing.refused >= times) {
+            return false;
+        }
+
+        if (existing) {
+            this.#sql.exec("UPDATE faults SET refused = refused + 1 WHERE nonce = ?", nonce);
+        } else {
+            this.#sql.exec(
+                "INSERT INTO faults (nonce, refused, first_seen) VALUES (?, 1, ?)",
+                nonce,
+                now,
+            );
+        }
+        return true;
+    }
+
     #seed(): void {
         const catalogue = seed();
         for (const category of catalogue.categories) {
@@ -480,6 +533,10 @@ export class DurableObjectStore implements CatalogueStore {
 
     /** Not part of the port: the token endpoint's key, kept next to the catalogue because a
      * Durable Object is the only thing on Workers that every isolate agrees about. */
+    consumeFault(nonce: string, times: number): Promise<boolean> {
+        return call(() => this.#stub.consumeFault(nonce, times));
+    }
+
     authPrivateJwk(): Promise<string> {
         return call(() => this.#stub.authPrivateJwk());
     }

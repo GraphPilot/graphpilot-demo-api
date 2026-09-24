@@ -1,4 +1,5 @@
 import type { ActivityEntry, CatalogueStore, Product } from "../store/port.ts";
+import type { FaultAnswer } from "./fault.ts";
 import type { DemoContext } from "./index.ts";
 import type { Viewer } from "./me.ts";
 
@@ -83,5 +84,22 @@ export function queryResolvers(store: CatalogueStore) {
         // The only field that is never stored, and therefore the one that proves a response came
         // from the origin rather than from the edge.
         now: () => new Date().toISOString(),
+
+        // Fails on request. `fail: true` throws here, so the response carries errors and no data;
+        // leaving it false and selecting `Fault.broken` instead leaves this answer standing beside
+        // the error it produces. Both are refused by the edge, and the second is the one worth
+        // looking at, because it is the one that still contains usable data.
+        //
+        // `observedAt` is stamped here for the same reason `activity` stamps its own: it is the
+        // only evidence that separates an answer the origin produced from one the edge had already.
+        faulty: (_root: unknown, args: { nonce: string; fail: boolean }): FaultAnswer => {
+            if (args.fail) {
+                throw new Error(
+                    `Query.faulty was asked to fail (nonce ${args.nonce}): it exists so the edge's ` +
+                        `handling of an erroring origin can be observed`,
+                );
+            }
+            return { nonce: args.nonce, observedAt: new Date().toISOString() };
+        },
     };
 }

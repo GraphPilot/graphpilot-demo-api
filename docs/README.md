@@ -142,3 +142,5 @@ answered, you are not measuring GraphPilot's. Nothing on these pages should ever
 
 15. [Origin signature](15-origin-signature.md) - proving the request came from the edge.
 16. [Persisted operations](16-persisted-operations.md) - serving an operation by its hash.
+17. [Errors are not cached](17-errors-are-not-cached.md) - the rule with no opt-in, including partial data.
+18. [Origin retries](18-origin-retries.md) - a failed attempt sent again, without the client learning.

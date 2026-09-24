@@ -205,6 +205,44 @@ enum ReportRange {
     MONTH
 }
 
+# The type that exists to fail.
+#
+# Every other type here demonstrates the cache working. This one demonstrates what the edge does
+# when the origin does not, and that is a promise of its own: a response carrying a GraphQL `errors`
+# array is never stored. The rule is unconditional, it is evaluated ahead of both policy sources,
+# and there is no opt-in to it anywhere. Without something that can fail on request there is no way
+# to watch it hold, which is why `docs/17-errors-are-not-cached.md` had no walkthrough until this
+# type existed.
+#
+# `maxAge: 300` is the whole point rather than an arbitrary number. A failing answer has to be one
+# the edge WOULD have stored, or "it was not cached" proves nothing at all: an operation with no
+# policy is not cached either, for a completely different reason. So `faulty` asked without `broken`
+# is stored like any other answer, and that control is what gives the failing case its meaning.
+type Fault @cacheControl(maxAge: 300, scope: PUBLIC) @surrogateKey(static: "fault") {
+    """Echoes the `nonce` the request asked with, so an answer can be tied to the request that produced it."""
+    nonce: String!
+
+    """ISO 8601, stamped when the resolver ran. Unchanged means the origin was not reached."""
+    observedAt: String!
+
+    """
+    Throws whenever it is selected, and resolves for nobody.
+
+    Selected beside the two fields above, it produces the shape the rule is really about: `data` and
+    `errors` in one response, with a 200 over both. Most of the answer is readable and the edge
+    still refuses to store any of it, because the half that failed would otherwise be served to
+    everyone asking the same question until the entry expired.
+
+    Nullable, and that is the whole reason this field produces partial data rather than none. A
+    non-null field that throws does not merely fail itself: GraphQL nulls its parent, and its
+    parent's parent, up to the first nullable position. As `String!` inside a `Fault!` returned from
+    a `Fault!` field, the error would climb all the way to `data` and erase the answer, which is the
+    case `fail: true` already covers. Nullable stops the climb here, so `nonce` and `observedAt`
+    survive beside it.
+    """
+    broken: String
+}
+
 ####################################################################################################
 # Queries
 ####################################################################################################
@@ -241,6 +279,21 @@ type Query {
 
     # Uncacheable on purpose: the reference point for "this really came from the origin".
     now: String! @cacheControl(maxAge: 0)
+
+    # Fails on request, so the edge's behaviour on an erroring origin can be watched rather than
+    # reasoned about. Two levers, and they are separate because they produce different shapes:
+    # `fail: true` makes the whole resolver throw, which is errors and no data at all, while
+    # selecting `Fault.broken` leaves the rest of the answer standing beside the error.
+    #
+    # No `@cacheControl` here on purpose. A field's hint REPLACES its return type's rather than
+    # adding to it, so an annotation repeating `type Fault`'s numbers would be a second place to
+    # change and one place to forget. Left bare, the type's hint applies, which is the same shape
+    # `product(id:)` above relies on.
+    #
+    # `nonce` is required rather than optional, and it is the argument that makes this field safe to
+    # leave on a public demo: it travels in the cache key, so two callers never meet each other's
+    # entry, and a run always addresses a key nothing has poisoned.
+    faulty(nonce: String!, fail: Boolean! = false): Fault!
 }
 
 ####################################################################################################

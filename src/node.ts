@@ -5,6 +5,7 @@ import { claimsFromAuthorization, InvalidTokenError } from "./auth/claims.ts";
 import { handleJwksRequest } from "./auth/jwks-endpoint.ts";
 import { loadKeys } from "./auth/keys.ts";
 import { handleTokenRequest } from "./auth/token-endpoint.ts";
+import { faultFromHeaders } from "./fault.ts";
 import type { DemoContext } from "./resolvers/index.ts";
 import { createSchema } from "./schema.ts";
 import { verifyOriginSignature } from "./signing/verify.ts";
@@ -81,6 +82,18 @@ const server = createServer(async (request, response) => {
 
     if (path === "/health") {
         send(response, 200, { status: "ok" });
+        return;
+    }
+
+    // The requested transient failure, decided before the body is parsed, because a gateway status
+    // is the thing under test. Same rule as on Workers (`src/worker.ts`), so a walkthrough written
+    // against a local run holds against the deployed demo.
+    const fault = faultFromHeaders(request.headers);
+    if (fault && (await store.consumeFault(fault.nonce, fault.times))) {
+        send(response, fault.status, {
+            error: "the demo origin was asked to refuse this attempt",
+            nonce: fault.nonce,
+        });
         return;
     }
 
