@@ -138,3 +138,38 @@ names = ["id"]
 # text query, which is most of this repository's documentation.
 [persisted_query]
 enabled = true
+
+# Origin retries, off by default in the proxy and on here because `docs/18-origin-retries.md`
+# promises they work: an attempt that fails before it reaches the application is sent again, and the
+# client never learns that the first one failed.
+#
+# This is the one section in this file that changes what every request to the demo does, rather than
+# adding a capability a request has to ask for. It is deliberate. Retries are the feature with the
+# least visible failure mode, since a retry that succeeds quietly looks exactly like an origin that
+# never failed, and a demo that documents them without running them would be documenting an
+# assumption.
+#
+# `max_retries = 2` means at most three attempts. The worst case has to fit the 120 seconds a
+# request may spend at the edge, counted as `(max_retries + 1) x (connect + first_byte) + backoff`,
+# and the deployment build refuses a configuration that does not. Three attempts leave that budget
+# comfortable at every plan's first-byte ceiling.
+#
+# `status_codes` is left at its default of the three gateway statuses, and `src/fault.ts` accepts
+# only those three from a client for the same reason: a `500` is the application answering, and a
+# demo that retried one would teach the wrong list.
+#
+# `retry_mutations` is left at its default of `true`, and here that is provably safe rather than
+# merely conventional. The demo's requested failure is decided in the worker before the body is
+# parsed (`src/worker.ts`), so a refused attempt never ran the mutation and sending it again is the
+# first write rather than a second one. An origin that can return a gateway status after a write has
+# already committed needs `false` instead.
+#
+# The delays are short on purpose. The default of a second per attempt is the right number for a
+# real origin and the wrong one for a walkthrough, where the whole sequence should fit inside a
+# reader's attention.
+[origin.retry]
+enabled = true
+max_retries = 2
+backoff = "fixed"
+delay_ms = 200
+max_delay_ms = 500
