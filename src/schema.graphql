@@ -79,9 +79,14 @@ type Product
     # of the product is stored for 5 seconds, not for an hour. The lowest lifetime in the selection
     # wins over the whole answer.
     #
-    # The scope is repeated here because a field's hint replaces the return type's, rather than
-    # adding to it: without it this would say nothing about audience, and a hint that says nothing
-    # is read as private, so the whole product answer would be stored once per caller.
+    # The scope is repeated here, and since graphpilot-proxy#488 it no longer has to be: a field's
+    # hint is laid OVER its return type's, argument by argument, so what this leaves out comes from
+    # `type Inventory`, which says `PUBLIC` anyway. It is kept because it is also what the field
+    # means, and a reader should not have to open `Inventory` to learn who shares this answer.
+    #
+    # Before that release a field hint replaced the type's as a whole, and leaving `scope` out here
+    # would have said nothing about audience. A hint that names no scope is read as private, so the
+    # whole product answer would have been stored once per caller.
     inventory: Inventory! @cacheControl(maxAge: 5, scope: PUBLIC)
 
     reviews: [Review!]!
@@ -96,11 +101,16 @@ type Category
     id: ID!
     name: String!
 
-    # `inheritMaxAge` is the opposite of the `inventory` field above: instead of capping the answer
-    # at the product's own hour, the list keeps the category's day.
+    # `inheritMaxAge` asks for the opposite of the `inventory` field above: instead of capping the
+    # answer at the product's own hour, keep the category's day.
     #
-    # And the scope again, for the same reason: this hint replaces `Product`'s, so leaving it out
-    # would drop the `PUBLIC` written there and store a public catalogue per caller.
+    # It does not get it, and that is worth reading twice. Since graphpilot-proxy#488 the merge
+    # follows Apollo Server's rule: a field's `inheritMaxAge` applies only when its return type
+    # states no `maxAge` of its own. `type Product` states 3600, so 3600 wins and this list is
+    # stored for an hour, not for a day. To actually inherit, `Product` would have to drop its own
+    # lifetime.
+    #
+    # The scope is kept for the reason the `inventory` field gives.
     products: [Product!]! @cacheControl(inheritMaxAge: true, scope: PUBLIC)
 }
 
@@ -151,10 +161,14 @@ type Activity @cacheControl(maxAge: 5, scope: PUBLIC, swr: 60) @surrogateKey(sta
     # stated once, on the feed, and the entries keep whatever it says. Two copies of `maxAge: 5,
     # swr: 60` would be two places to change and one place to forget.
     #
-    # `scope` is written here as well, and it has to be. A field's own hint replaces the return
-    # type's hint, it is not merged with it, so this annotation hides `ActivityEntry` entirely. A
-    # hint that names no scope is read as private, which would quietly give this public feed one
-    # stored entry per caller.
+    # `scope` is written here as well. Since graphpilot-proxy#488 a field hint no longer hides its
+    # return type's, it is laid over it argument by argument, so an omitted scope would now be
+    # taken from `ActivityEntry`. That type states none, and a hint that names no scope is read as
+    # private, so leaving this out would still give a public feed one stored entry per caller.
+    #
+    # `inheritMaxAge` works here where it does not on `Category.products` above, and for exactly
+    # the documented reason: `ActivityEntry` carries no `@cacheControl` at all, so there is no type
+    # `maxAge` to beat it.
     entries: [ActivityEntry!]! @cacheControl(inheritMaxAge: true, scope: PUBLIC)
 }
 
@@ -285,10 +299,10 @@ type Query {
     # `fail: true` makes the whole resolver throw, which is errors and no data at all, while
     # selecting `Fault.broken` leaves the rest of the answer standing beside the error.
     #
-    # No `@cacheControl` here on purpose. A field's hint REPLACES its return type's rather than
-    # adding to it, so an annotation repeating `type Fault`'s numbers would be a second place to
-    # change and one place to forget. Left bare, the type's hint applies, which is the same shape
-    # `product(id:)` above relies on.
+    # No `@cacheControl` here on purpose: left bare, `type Fault`'s hint applies whole, which is the
+    # same shape `product(id:)` above relies on. Since graphpilot-proxy#488 a partial annotation
+    # here would also work, since what it left out would come from the type, but repeating numbers
+    # that are already stated is still a second place to change and one place to forget.
     #
     # `nonce` is required rather than optional, and it is the argument that makes this field safe to
     # leave on a public demo: it travels in the cache key, so two callers never meet each other's

@@ -52,9 +52,31 @@ export async function verifyToken(token: string, keys: DemoKeys): Promise<Claims
 }
 
 /**
+ * The prefix the edge's `[auth.providers.apikey]` recognizes, and this origin's own reason to
+ * recognize it too.
+ *
+ * An API key is opaque: there is no signature and no key material, so nothing here can verify it,
+ * and nothing is meant to. What matters is that it is somebody's credential rather than a
+ * malformed token, so it must not be answered 401. It contributes no claim, which is the whole
+ * lesson: the edge derives no organization and no role from it, so a response the schema scopes on
+ * those cannot be partitioned and is answered without being stored
+ * (`CACHE_SKIPPED_PRIVATE_WITHOUT_DISCRIMINATOR`).
+ *
+ * Refusing it here would hide that. A 401 is not stored either, for a completely different reason
+ * (`CACHE_SKIPPED_ERROR_STATUS` since graphpilot-proxy#474), and a walkthrough or a test reading
+ * that code would be measuring this origin's refusal rather than the edge's partitioning rule.
+ * That is exactly what `docs/10-api-key-vs-jwt.md` and the system tests were doing until the new
+ * code made the difference visible.
+ */
+const API_KEY_PREFIX = "demo_sk_";
+
+/**
  * Null when nobody claimed an identity, the verified claims when somebody did. Throws when a
  * token was presented and did not hold up, so an entry point can answer 401 rather than quietly
  * serving the anonymous answer to someone who believes they are signed in.
+ *
+ * An API key is the third case and lands on `null` with the anonymous readers: recognized, and
+ * carrying nothing to identify anyone with.
  */
 export async function claimsFromAuthorization(
     authorization: string | undefined | null,
@@ -66,6 +88,9 @@ export async function claimsFromAuthorization(
     const match = BEARER.exec(authorization);
     if (!match?.[1]) {
         throw new InvalidTokenError("the authorization header is not a bearer token");
+    }
+    if (match[1].startsWith(API_KEY_PREFIX)) {
+        return null;
     }
     return verifyToken(match[1], keys);
 }

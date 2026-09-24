@@ -123,6 +123,19 @@ describe("reading a token on the way in", () => {
         );
     });
 
+    it("takes an API key as a caller carrying no claims, rather than refusing it", async () => {
+        // The distinction the whole api-key lesson rests on, and it is not a nicety. An API key is
+        // opaque, so nothing here can verify it and nothing is meant to; what matters is that it
+        // is somebody's credential rather than a malformed token.
+        //
+        // Refused, it would be a 401, which the edge does not store either, but for an entirely
+        // different reason (`CACHE_SKIPPED_ERROR_STATUS`). A walkthrough or a system test reading
+        // that code would be measuring this origin's refusal instead of the edge's partitioning
+        // rule, which is precisely what both were doing until graphpilot-proxy#474 added the status
+        // code and made the two tell apart.
+        expect(await claimsFromAuthorization("Bearer demo_sk_anything", keys)).toBeNull();
+    });
+
     it("refuses a garbled token", async () => {
         await expect(claimsFromAuthorization("Bearer nonsense", keys)).rejects.toBeInstanceOf(
             InvalidTokenError,

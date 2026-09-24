@@ -68,7 +68,8 @@ curl -sS -D- -o/dev/null "$EDGE/graphql" \
 
 ```
 HTTP/2 503
-gp-cache: MISS
+gp-cache: PASS
+gp-cache-reason: CACHE_SKIPPED_ERROR_STATUS
 gp-origin-retries: 2
 ```
 
@@ -79,14 +80,16 @@ Note the status: the client gets the origin's own `503`, not a `502`. `BAD_GATEW
 origin that could not be reached or did not answer usably. This origin answered, it just answered
 with a refusal, and GraphPilot passes that through rather than rewriting it.
 
-<!-- gp-pending: GraphPilot/graphpilot-proxy#474 -->
-And note `gp-cache: MISS`, which since the status vocabulary settled means the response was
-**stored**. That is a known gap, not the intended behaviour: an error status is meant to be
-unstorable unless a service opts in. Until it lands, the exhausted run above writes a `503` into
-the cache under the schema's own lifetime and serves it to everyone asking the same question for
-the next five minutes, which is precisely what the rule on the previous page prevents one level up.
-Use a fresh nonce for each attempt at this walkthrough, or you will be reading your own cached
-failure.
+And note `gp-cache: PASS` with `gp-cache-reason: CACHE_SKIPPED_ERROR_STATUS`. An error status is
+not stored, so the next caller asking the same question reaches your origin rather than being
+handed your outage. That is the default since graphpilot-proxy#474; a service that wants a
+particular status cached, a `404` for a resource that genuinely does not exist for example, lists
+it in `cache.policy.store_error_statuses`.
+
+Worth knowing why this rule exists separately from the one on the previous page. A `5xx` carries no
+`errors` array, so the GraphQL rule never sees it, and until this landed the response was stored
+under the schema's own lifetime and served as a `HIT` to everyone sharing the key. A ten second
+outage became a five minute one.
 
 ## What is worth knowing beyond the curl
 
