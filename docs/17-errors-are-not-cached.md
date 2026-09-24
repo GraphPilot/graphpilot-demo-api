@@ -48,7 +48,7 @@ curl -sS -D- "$EDGE/graphql" \
 ```
 gp-cache: PASS
 gp-cache-reason: CACHE_SKIPPED_GRAPHQL_ERRORS
-{"errors":[{"message":"Query.faulty was asked to fail ...","path":["faulty"]}],"data":null}
+{"errors":[{"message":"Query.faulty was asked to fail (nonce ...)","path":["faulty"],"extensions":{"code":"DEMO_DELIBERATE_FAILURE"}}],"data":null}
 ```
 
 Send it twice. It is `PASS` both times, which is the part that matters: a single `PASS` would only
@@ -71,7 +71,7 @@ curl -sS -D- "$EDGE/graphql" \
 ```
 gp-cache: PASS
 gp-cache-reason: CACHE_SKIPPED_GRAPHQL_ERRORS
-{"errors":[{"message":"Fault.broken always fails ...","path":["faulty","broken"]}],"data":{"faulty":{"nonce":"...","observedAt":"...","broken":null}}}
+{"errors":[{"message":"Fault.broken always fails ...","path":["faulty","broken"],"extensions":{"code":"DEMO_DELIBERATE_FAILURE"}}],"data":{"faulty":{"nonce":"...","observedAt":"...","broken":null}}}
 ```
 
 A 200, real data the client can use, and still nothing stored. This is the case where the rule

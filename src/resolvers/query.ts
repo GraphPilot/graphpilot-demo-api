@@ -1,5 +1,5 @@
 import type { ActivityEntry, CatalogueStore, Product } from "../store/port.ts";
-import type { FaultAnswer } from "./fault.ts";
+import { deliberateFailure, type FaultAnswer } from "./fault.ts";
 import type { DemoContext } from "./index.ts";
 import type { Viewer } from "./me.ts";
 
@@ -94,7 +94,7 @@ export function queryResolvers(store: CatalogueStore) {
         // only evidence that separates an answer the origin produced from one the edge had already.
         faulty: (_root: unknown, args: { nonce: string; fail: boolean }): FaultAnswer => {
             if (args.fail) {
-                throw new Error(
+                throw deliberateFailure(
                     `Query.faulty was asked to fail (nonce ${args.nonce}): it exists so the edge's ` +
                         `handling of an erroring origin can be observed`,
                 );

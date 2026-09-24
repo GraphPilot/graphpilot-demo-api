@@ -263,6 +263,26 @@ describe("the worker", () => {
         expect(payload.data?.categories?.length).toBe(seed().categories.length);
     });
 
+    it("lets the deliberate failure's own message through Yoga's mask", async () => {
+        // Yoga masks anything that is not a `GraphQLError` down to "Unexpected error.", which is
+        // the right default for a real API and would make this demo unreadable: the message is
+        // what a reader sees in their `errors` array and in the portal's GraphQL tab. The unit
+        // tests execute the schema directly and never meet the mask, so this is the only place
+        // that can prove the message survives the server.
+        const response = await call(
+            post("/graphql", {
+                query: 'query { faulty(nonce: "masked", fail: true) { nonce } }',
+            }),
+            envWith({}),
+        );
+        const payload = (await response.json()) as {
+            errors?: Array<{ message: string; extensions?: { code?: string } }>;
+        };
+
+        expect(payload.errors?.[0]?.message).toMatch(/Query\.faulty was asked to fail/);
+        expect(payload.errors?.[0]?.extensions?.code).toBe("DEMO_DELIBERATE_FAILURE");
+    });
+
     it("answers normally for a request that asked for nothing", async () => {
         // The control. Without it, a worker that refused everything would pass the test above.
         const response = await call(

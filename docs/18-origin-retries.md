@@ -67,11 +67,26 @@ curl -sS -D- -o/dev/null "$EDGE/graphql" \
 ```
 
 ```
-HTTP/2 502
+HTTP/2 503
+gp-cache: MISS
+gp-origin-retries: 2
 ```
 
 Three attempts, the first plus the two retries, all refused, and the client is told. Whatever the
 retries cost, nobody waits forever: the count is a hard ceiling.
+
+Note the status: the client gets the origin's own `503`, not a `502`. `BAD_GATEWAY` is for an
+origin that could not be reached or did not answer usably. This origin answered, it just answered
+with a refusal, and GraphPilot passes that through rather than rewriting it.
+
+<!-- gp-pending: GraphPilot/graphpilot-proxy#474 -->
+And note `gp-cache: MISS`, which since the status vocabulary settled means the response was
+**stored**. That is a known gap, not the intended behaviour: an error status is meant to be
+unstorable unless a service opts in. Until it lands, the exhausted run above writes a `503` into
+the cache under the schema's own lifetime and serves it to everyone asking the same question for
+the next five minutes, which is precisely what the rule on the previous page prevents one level up.
+Use a fresh nonce for each attempt at this walkthrough, or you will be reading your own cached
+failure.
 
 ## What is worth knowing beyond the curl
 
