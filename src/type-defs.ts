@@ -316,12 +316,24 @@ type Query {
 ####################################################################################################
 # Mutations
 #
-# Never stored, and the annotation sits on each field rather than on the type. A hint on a type is
-# read when something RETURNS that type, and nothing returns \`Mutation\`, so \`type Mutation
-# @cacheControl(maxAge: 0)\` would be decorative: every write would resolve the hint on the type it
-# returns instead, and \`setPrice\` would inherit \`Product\`'s hour.
+# Never stored, and NOT because of anything written here. A mutation is uncacheable by operation
+# type, decided before any annotation is consulted, and the edge reports it as
+# \`CACHE_SKIPPED_UNCACHEABLE_OPERATION\` whatever the schema says.
 #
-# They exist so a purge has something to prove: change a price, then watch the cached answer.
+# These fields used to carry \`@cacheControl(maxAge: 0)\` each, on the reasoning that a hint on
+# \`type Mutation\` would be decorative (nothing RETURNS \`Mutation\`, so that hint is never read) and
+# that without a field hint \`setPrice\` would inherit \`Product\`'s hour. The first half is true. The
+# second is not: the operation-type rule sits above the whole policy question, so there was nothing
+# for the annotation to prevent.
+#
+# The deployment build says so, which is how this was found: four \`@cacheControl on mutation field
+# ... is ignored\` warnings under Schema -> Findings in the portal. A directive that does nothing is
+# worse than no directive on a schema people read to learn the rules, because it implies a rule
+# that is not there. Removed, and the warnings with them.
+#
+# The mutations exist so a purge has something to prove: change a price, then watch the cached
+# answer. \`tests/cache-basics.test.ts\` in graphpilot-system-tests pins the rule itself against the
+# deployed service.
 ####################################################################################################
 
 input ReviewDraft {
@@ -332,9 +344,9 @@ input ReviewDraft {
 }
 
 type Mutation {
-    setPrice(id: ID!, price: Int!): Product! @cacheControl(maxAge: 0)
-    addReview(input: ReviewDraft!): Review! @cacheControl(maxAge: 0)
-    reserveStock(id: ID!, count: Int!): Inventory! @cacheControl(maxAge: 0)
-    renameCategory(id: ID!, name: String!): Category! @cacheControl(maxAge: 0)
+    setPrice(id: ID!, price: Int!): Product!
+    addReview(input: ReviewDraft!): Review!
+    reserveStock(id: ID!, count: Int!): Inventory!
+    renameCategory(id: ID!, name: String!): Category!
 }
 `;

@@ -4,8 +4,16 @@
 from the origin, every single time, so you can use them to tell a real origin visit apart from a
 cache hit.
 
-`Query.now` carries `@cacheControl(maxAge: 0)`. `type Mutation` carries the same, once, on the
-type, so no individual write has to remember.
+The two get there by different routes, and the difference is the lesson of this page.
+
+`Query.now` carries `@cacheControl(maxAge: 0)`. That is an annotation doing real work: without it
+the field would resolve a lifetime and its answers would be stored.
+
+The mutations carry **nothing**, and they do not need to. A mutation is uncacheable by operation
+type, decided before any annotation is consulted. They used to be annotated `@cacheControl(maxAge: 0)`
+each, and the deployment build was right to call that out: a directive that changes nothing is
+worse than no directive on a schema people read to learn the rules, because it implies a rule that
+is not there.
 
 ## Send this
 
@@ -69,9 +77,13 @@ is published API and was deliberately left alone when the statuses were tightene
 prefix as "when", not as "what happened".
 
 `CACHE_SKIPPED_NO_MAX_AGE` is `maxAge: 0` arriving at the store step with no lifetime to give the
-entry. `CACHE_SKIPPED_UNCACHEABLE_OPERATION` is the flat rule above it: only a query is ever
-written to the cache, whatever a mutation's annotations say. Both are decided after the origin has
-answered, which is why they are `SKIPPED` and not `PASS` reasons.
+entry: an annotation was read, and it said zero. `CACHE_SKIPPED_UNCACHEABLE_OPERATION` is the flat
+rule above it: only a query is ever written to the cache, and no annotation on a mutation is
+consulted at all. Both are decided after the origin has answered, which is why they are `SKIPPED`
+and not `PASS` reasons.
+
+Which code comes back is therefore the answer to "did the schema have anything to do with this".
+For `now`, yes. For a write, no.
 
 The two timestamps are the belt to those braces. A stored `now` would repeat itself.
 
