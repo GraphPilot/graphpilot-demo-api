@@ -295,9 +295,16 @@ type KeyedFault
     """
     The value the \`of:\` key is built from, and the field the edge injects to get it.
 
-    \`keyed-<nonce>\` when the request did not ask it to fail, so the answer carries
+    \`keyed-<nonce>\` when the request did not ask for anything else, so the answer carries
     \`KeyedFault:brokenId:keyed-<nonce>\` and a purge can name it. \`failKey: true\` makes it throw
     instead, which is the case worth having: the error names a field the client did not select.
+
+    \`nullKey: true\` is the third case, and it is the quiet one. The field resolves to null with no
+    error anywhere, which is ordinary schema design rather than a fault: an optional author, a
+    \`parentId\` that is null at the root of a tree, a tenant absent on a global record. Nothing in
+    the response says anything went wrong, so no rule refuses to store it, and whatever the edge
+    then writes as the key is what a customer's purge of \`Type:field:<id>\` will be aimed at. Worth
+    demonstrating precisely because it looks like nothing at all.
 
     Nullable for the reason \`Fault.broken\` is. A non-null field that throws nulls its parent and
     keeps climbing, so the answer would be erased and the interesting shape, data beside an error
@@ -365,9 +372,17 @@ type Query {
     # injected field throw, which is the only way to produce an error about a field the client never
     # asked for, and therefore the only way to watch what the edge does with one.
     #
+    # \`nullKey: true\` is the same injection without the failure: \`brokenId\` resolves to null, no
+    # error is produced, and nothing in the answer marks the response as unusual. It is a separate
+    # argument rather than a value of \`failKey\` because the two are opposites in the only way that
+    # matters here: a throw makes the response uncacheable and a null does not, so the key an empty
+    # value produces is only ever written onto a STORED entry in this case.
+    #
+    # \`failKey\` wins when both are set. One argument has to, and the throw is the louder of the two.
+    #
     # \`nonce\` is required here for the same reason it is on \`faulty\`: it travels in the cache key, so
     # a run addresses an entry nobody else shares.
-    keyedFault(nonce: String!, failKey: Boolean! = false): KeyedFault!
+    keyedFault(nonce: String!, failKey: Boolean! = false, nullKey: Boolean! = false): KeyedFault!
 }
 
 ####################################################################################################

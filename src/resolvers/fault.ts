@@ -35,13 +35,20 @@ export interface KeyedFaultAnswer {
     nonce: string;
     observedAt: string;
     failKey: boolean;
+    nullKey: boolean;
 }
 
 export function keyedFaultResolvers() {
     return {
         // Derived from the nonce rather than random, so the surrogate key on the answer is one a
         // reader can predict and purge by hand: `KeyedFault:brokenId:keyed-<nonce>`.
-        brokenId: (root: KeyedFaultAnswer): string => {
+        brokenId: (root: KeyedFaultAnswer): string | null => {
+            if (root.nullKey && !root.failKey) {
+                // The quiet case. No error, nothing in the answer to notice, and the edge still has
+                // a key to build from a value that is not there. What it writes then is the whole
+                // question, because a purge aimed at that key is a purge a customer believes worked.
+                return null;
+            }
             if (root.failKey) {
                 throw deliberateFailure(
                     `KeyedFault.brokenId was asked to fail (nonce ${root.nonce}): it is the field ` +

@@ -108,11 +108,12 @@ export function queryResolvers(store: CatalogueStore) {
         // written by the edge and nothing the client sends reaches its arguments.
         keyedFault: (
             _root: unknown,
-            args: { nonce: string; failKey: boolean },
+            args: { nonce: string; failKey: boolean; nullKey: boolean },
         ): KeyedFaultAnswer => ({
             nonce: args.nonce,
             observedAt: new Date().toISOString(),
             failKey: args.failKey,
+            nullKey: args.nullKey,
         }),
     };
 }

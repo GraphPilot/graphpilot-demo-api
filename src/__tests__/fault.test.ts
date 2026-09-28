@@ -201,6 +201,28 @@ describe("the schema field that fails", () => {
         ).toBe("k2");
     });
 
+    it("returns the key field as a quiet null when asked, with no error anywhere", async () => {
+        // The hazard this argument exists to make measurable. A nullable key field that legitimately
+        // returns null is ordinary schema design, and unlike the throw above it produces no `errors`
+        // array, so no rule stops the response being stored. Whatever key the edge then writes is
+        // one a customer's purge will be aimed at, and `docs/20` measures which it is.
+        const result = await run('{ keyedFault(nonce: "k4", nullKey: true) { nonce brokenId } }');
+
+        expect(result.errors, "a quiet null is not an error").toBeUndefined();
+        expect(result.data?.keyedFault).toEqual({ nonce: "k4", brokenId: null });
+    });
+
+    it("lets the throw win when a request asks for both", async () => {
+        // One of the two has to, and the louder one should: a caller who asked for a failure and a
+        // null at once is served the failure, rather than a silent answer they cannot tell from the
+        // control.
+        const result = await run(
+            '{ keyedFault(nonce: "k5", failKey: true, nullKey: true) { nonce brokenId } }',
+        );
+
+        expect(result.errors?.[0]?.path).toEqual(["keyedFault", "brokenId"]);
+    });
+
     it("answers without the key field at all when nobody asks for it", async () => {
         // What a client's own document looks like before the edge expands it. The failure is
         // attached to `brokenId` and to nothing else, so a query that does not reach it is an
