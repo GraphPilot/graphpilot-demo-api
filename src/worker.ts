@@ -4,6 +4,7 @@ import { handleJwksRequest } from "./auth/jwks-endpoint.ts";
 import { type DemoKeys, keysFromPrivateJwk } from "./auth/keys.ts";
 import { handleTokenRequest } from "./auth/token-endpoint.ts";
 import { faultFromHeaders } from "./fault.ts";
+import { behaviourHeaders, delay, scopedBehaviour } from "./misbehave.ts";
 import type { DemoContext } from "./resolvers/index.ts";
 import { createSchema } from "./schema.ts";
 import { verifyOriginSignature } from "./signing/verify.ts";
@@ -85,6 +86,25 @@ function json(status: number, body: unknown): Response {
         status,
         headers: { "content-type": "application/json" },
     });
+}
+
+/**
+ * The same response, carrying the headers a requested misbehaviour adds.
+ *
+ * A `Response` Yoga has produced has immutable headers, so this rebuilds it around the same body
+ * rather than writing into it. `set` rather than `append`, because the lever asks the origin to
+ * send exactly one value and a second `Cache-Control` beside the first would be a different defect
+ * than the one under test.
+ */
+function withHeaders(response: Response, extra: Record<string, string>): Response {
+    if (Object.keys(extra).length === 0) {
+        return response;
+    }
+    const copy = new Response(response.body, response);
+    for (const [name, value] of Object.entries(extra)) {
+        copy.headers.set(name, value);
+    }
+    return copy;
 }
 
 /**
@@ -181,6 +201,18 @@ export default {
             return json(404, { error: `nothing is served at ${path}` });
         }
 
+        // The requested misbehaviour, resolved against the body rather than the headers alone:
+        // `scopedBehaviour` applies nothing unless this request owns its cache key. See
+        // `src/misbehave.ts` for why that check is the whole safety argument.
+        const behaviour = scopedBehaviour(request.headers, body);
+        if (behaviour?.delayMs) {
+            // Before everything below, because the lever promises a delay to the FIRST byte. Spent
+            // here it is also spent on every retry the edge makes, which is the interaction
+            // `docs/19-a-misbehaving-origin.md` walks through.
+            await delay(behaviour.delayMs);
+        }
+        const extra = behaviourHeaders(behaviour, request.headers);
+
         // The requested transient failure, decided here because it has to be decided before the
         // body is parsed: a gateway status is the thing under test, and a GraphQL error would be a
         // different promise entirely. It sits behind the signature guard above, so only a request
@@ -192,10 +224,13 @@ export default {
                 fault.times,
             );
             if (refuse) {
-                return json(fault.status, {
-                    error: "the demo origin was asked to refuse this attempt",
-                    nonce: fault.nonce,
-                });
+                return withHeaders(
+                    json(fault.status, {
+                        error: "the demo origin was asked to refuse this attempt",
+                        nonce: fault.nonce,
+                    }),
+                    extra,
+                );
             }
         }
 
@@ -217,6 +252,6 @@ export default {
             headers: request.headers,
             body: body === "" ? null : body,
         });
-        return yogaFor(env).fetch(forwarded, { claims });
+        return withHeaders(await yogaFor(env).fetch(forwarded, { claims }), extra);
     },
 } satisfies ExportedHandler<Env>;

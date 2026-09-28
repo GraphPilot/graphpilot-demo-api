@@ -283,6 +283,60 @@ describe("the worker", () => {
         expect(payload.errors?.[0]?.extensions?.code).toBe("DEMO_DELIBERATE_FAILURE");
     });
 
+    it("puts the requested headers on the answer when the request owns its cache key", async () => {
+        // Through the worker rather than against `behaviourHeaders`, because the response Yoga
+        // produces has immutable headers: a unit test over the record would pass while the deployed
+        // origin threw on every lever.
+        const nonce = `lever-${crypto.randomUUID()}`;
+        const response = await call(
+            post(
+                "/graphql",
+                {
+                    query: "query L($n: String!) { faulty(nonce: $n) { nonce } }",
+                    variables: { n: nonce },
+                },
+                {
+                    "x-demo-scope-nonce": nonce,
+                    "x-demo-cache-control": "public, max-age=31536000",
+                    "x-demo-set-cookie": "sid=demo; Path=/",
+                    "x-demo-surrogate-key": "invented",
+                    "x-demo-echo-headers": "x-demo-scope-nonce,x-not-sent",
+                },
+            ),
+            envWith({}),
+        );
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("cache-control")).toBe("public, max-age=31536000");
+        expect(response.headers.get("set-cookie")).toBe("sid=demo; Path=/");
+        expect(response.headers.get("surrogate-key")).toBe("invented");
+        expect(JSON.parse(response.headers.get("x-demo-received-headers") ?? "{}")).toEqual({
+            "x-demo-scope-nonce": nonce,
+            "x-not-sent": null,
+        });
+    });
+
+    it("ignores the same headers on a document other callers share", async () => {
+        // The safety property, end to end. The cache key is the document plus its variables, so a
+        // lever honoured here would be written into an entry everybody asking `{ categories }`
+        // reads, and no later request could dislodge it.
+        const nonce = `lever-${crypto.randomUUID()}`;
+        const response = await call(
+            post(
+                "/graphql",
+                { query: "{ categories { id } }" },
+                {
+                    "x-demo-scope-nonce": nonce,
+                    "x-demo-cache-control": "public, max-age=31536000",
+                },
+            ),
+            envWith({}),
+        );
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get("cache-control")).not.toBe("public, max-age=31536000");
+    });
+
     it("answers normally for a request that asked for nothing", async () => {
         // The control. Without it, a worker that refused everything would pass the test above.
         const response = await call(

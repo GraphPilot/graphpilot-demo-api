@@ -6,6 +6,7 @@ import { handleJwksRequest } from "./auth/jwks-endpoint.ts";
 import { loadKeys } from "./auth/keys.ts";
 import { handleTokenRequest } from "./auth/token-endpoint.ts";
 import { faultFromHeaders } from "./fault.ts";
+import { behaviourHeaders, delay, scopedBehaviour } from "./misbehave.ts";
 import type { DemoContext } from "./resolvers/index.ts";
 import { createSchema } from "./schema.ts";
 import { verifyOriginSignature } from "./signing/verify.ts";
@@ -83,6 +84,21 @@ const server = createServer(async (request, response) => {
     if (path === "/health") {
         send(response, 200, { status: "ok" });
         return;
+    }
+
+    // The requested misbehaviour, on the API route only: it acts on the HTTP response the edge
+    // caches, and nothing else this server serves is ever cached. `scopedBehaviour` applies nothing
+    // unless the body puts this request on a cache key of its own, which is the whole safety
+    // argument and is written out in `src/misbehave.ts`.
+    const behaviour = path === "/graphql" ? scopedBehaviour(request.headers, body) : undefined;
+    if (behaviour?.delayMs) {
+        // Before anything is written, because the lever promises a delay to the first byte.
+        await delay(behaviour.delayMs);
+    }
+    // Set before the handler runs rather than after: `writeHead` only overrides the names it is
+    // given, so these survive both the refusal below and whatever Yoga sends.
+    for (const [name, value] of Object.entries(behaviourHeaders(behaviour, request.headers))) {
+        response.setHeader(name, value);
     }
 
     // The requested transient failure, decided before the body is parsed, because a gateway status
