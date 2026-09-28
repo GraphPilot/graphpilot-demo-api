@@ -1,6 +1,6 @@
 # The scenarios
 
-Sixteen pages, one per caching feature this demo uses. Each one says what to send, what comes
+Nineteen pages, one per caching feature this demo uses. Each one says what to send, what comes
 back, and which response header proves it. Read them in order: the early pages establish the
 vocabulary the later ones lean on.
 
@@ -144,3 +144,4 @@ answered, you are not measuring GraphPilot's. Nothing on these pages should ever
 16. [Persisted operations](16-persisted-operations.md) - serving an operation by its hash.
 17. [Errors are not cached](17-errors-are-not-cached.md) - the rule with no opt-in, including partial data.
 18. [Origin retries](18-origin-retries.md) - a failed attempt sent again, without the client learning.
+19. [A misbehaving origin](19-a-misbehaving-origin.md) - an origin that sets its own headers or stalls, and the scoping rule that keeps one caller's mess out of everyone else's entry.
