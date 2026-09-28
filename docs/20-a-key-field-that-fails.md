@@ -95,6 +95,58 @@ but a response that failed a key field and WAS stored would carry a key no purge
 against. An origin whose key fields can fail is an origin whose invalidation can quietly stop
 working, which is the practical warning on this page.
 
+## The quiet one: a key field that is simply null
+
+The failure above is loud. It produces an `errors` array, and that array is what stops the response
+being stored, so the empty key it produced was never written onto an entry anybody can hit. The case
+that costs a customer something is the same null without the error, and it is not a fault at all: a
+nullable key field that legitimately has no value. An optional author id, a `parentId` that is null
+at the root of a tree, a tenant absent on a global record. `nullKey: true` produces exactly that.
+
+```sh
+N="nk-$(date +%s)"
+
+for i in 1 2 3; do
+  curl -sS -D- "$EDGE/graphql" \
+    -H 'content-type: application/json' \
+    -H 'gp-client-name: demo-curl' \
+    -d "{\"query\":\"query QuietNull(\$n: String!) { keyedFault(nonce: \$n, nullKey: true) { nonce } }\",\"variables\":{\"n\":\"$N\"}}" \
+    | grep -iE '^gp-cache|^gp-surrogate-key|errors'
+done
+```
+
+```
+gp-cache: MISS
+gp-surrogate-key: ck:145507b1… ck:145507b1…:97f5bb0bff203815 q:keyedFault KeyedFault Query fault KeyedFault:brokenId:
+
+gp-cache: MISS
+gp-surrogate-key: … KeyedFault:brokenId:
+
+gp-cache: HIT
+gp-cache-hits: 1
+gp-cache-max-age: 300
+gp-cache-age: 0
+gp-surrogate-key: … KeyedFault:brokenId:
+```
+
+Two measured facts, and they are the ones worth carrying away from this page.
+
+**The response is stored.** No `errors` array, so nothing refuses it: `HIT`, with the type's full
+five minutes. The same answer with the key field resolving hits on the second send rather than the
+third; either way the entry exists and is served.
+
+**The key is written with an empty value, not omitted.** `KeyedFault:brokenId:` sits on the stored
+entry, with nothing after the final colon. Selecting `brokenId` explicitly changes nothing about it:
+the body then carries `"brokenId":null` and the key is still `KeyedFault:brokenId:`.
+
+Put together: the entry is reachable, and it is tagged with a key that names no object. A purge of
+`KeyedFault:brokenId:<some-id>` cannot match it, and a purge of the empty key would match every
+entry whose key field was null, across every object of that type. Neither side reports anything: the
+purge succeeds, the entry stays, and the only visible symptom is stale data nobody can explain. If
+your schema has a nullable field feeding a `@surrogateKey(of:)`, that is the failure mode to expect,
+and the fix is in the schema rather than in the purge: make the key field non-null, or key the type
+on something that always has a value. Tracked as graphpilot-proxy#506.
+
 ## The same failure, selected by the client
 
 Change nothing but the selection set:
@@ -119,7 +171,9 @@ looks like one.
 
 - `gp-surrogate-key` carrying `KeyedFault:brokenId:<value>` on a response whose body has no
   `brokenId`: the field was injected.
-- The same header carrying `KeyedFault:brokenId:` with an empty value: the injected field failed.
+- The same header carrying `KeyedFault:brokenId:` with an empty value: the injected field resolved
+  to null, whether it threw on the way there or not. Read it beside `gp-cache`: with an error the
+  entry was never stored, and with a quiet null it was.
 - The absence of an `errors` array on the failing query that did not select `brokenId`, beside its
   presence on the one that did: the entry was stripped rather than never produced.
 - `gp-cache-reason: CACHE_SKIPPED_GRAPHQL_ERRORS` on both: stripping changes what the client reads,
