@@ -182,7 +182,21 @@ export default {
             return handleReset(request, env, signatureChecked);
         }
 
-        const keys = await keysFor(env);
+        // TEMPORARY DIAGNOSTIC (2026-09-28): the deployed worker throws on every route that needs
+        // the key pair, while `/health` answers, and the runtime logs are not reachable from here.
+        // This turns the exception into an answer so it can be read from outside. Every run of
+        // base64url-looking text is redacted, because a failure to parse the stored private JWK
+        // would otherwise put key material into a public response. REMOVE once the cause is known.
+        let keys: DemoKeys;
+        try {
+            keys = await keysFor(env);
+        } catch (error) {
+            const name = error instanceof Error ? error.name : typeof error;
+            const raw = error instanceof Error ? error.message : String(error);
+            const safe = raw.replace(/[A-Za-z0-9_-]{20,}/g, "<redacted>").slice(0, 300);
+            console.error(`keysFor failed: ${name}: ${raw}`);
+            return json(500, { error: "the demo could not load its key pair", name, detail: safe });
+        }
 
         if (path === "/auth/jwks.json") {
             const reply = handleJwksRequest(keys);
