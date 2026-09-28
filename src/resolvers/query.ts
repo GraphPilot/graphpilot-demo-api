@@ -1,5 +1,5 @@
 import type { ActivityEntry, CatalogueStore, Product } from "../store/port.ts";
-import { deliberateFailure, type FaultAnswer } from "./fault.ts";
+import { deliberateFailure, type FaultAnswer, type KeyedFaultAnswer } from "./fault.ts";
 import type { DemoContext } from "./index.ts";
 import type { Viewer } from "./me.ts";
 
@@ -101,5 +101,18 @@ export function queryResolvers(store: CatalogueStore) {
             }
             return { nonce: args.nonce, observedAt: new Date().toISOString() };
         },
+
+        // The same shape, one level down: this answer always resolves, and what may fail is the
+        // field the edge injects to build the type's surrogate key. `failKey` is carried on the
+        // value rather than read again in `KeyedFault.brokenId`, because an injected field is
+        // written by the edge and nothing the client sends reaches its arguments.
+        keyedFault: (
+            _root: unknown,
+            args: { nonce: string; failKey: boolean },
+        ): KeyedFaultAnswer => ({
+            nonce: args.nonce,
+            observedAt: new Date().toISOString(),
+            failKey: args.failKey,
+        }),
     };
 }

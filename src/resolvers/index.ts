@@ -1,7 +1,7 @@
 import type { Claims } from "../auth/claims.ts";
 import type { CatalogueStore } from "../store/port.ts";
 import { categoryResolvers } from "./category.ts";
-import { faultResolvers } from "./fault.ts";
+import { faultResolvers, keyedFaultResolvers } from "./fault.ts";
 import { meResolvers } from "./me.ts";
 import { mutationResolvers } from "./mutation.ts";
 import { productResolvers } from "./product.ts";
@@ -27,5 +27,6 @@ export function createResolvers(store: CatalogueStore) {
         Category: categoryResolvers(store),
         Me: meResolvers(store),
         Fault: faultResolvers(),
+        KeyedFault: keyedFaultResolvers(),
     };
 }

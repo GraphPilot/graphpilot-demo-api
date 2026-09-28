@@ -260,6 +260,52 @@ type Fault @cacheControl(maxAge: 300, scope: PUBLIC) @surrogateKey(static: "faul
     broken: String
 }
 
+# The type whose KEY can fail, which is a different thing from the type above.
+#
+# \`type Fault\` carries a static key. A static key is a constant, so the edge builds it from the
+# document and never has to ask the origin for anything the client did not select. This type carries
+# an \`of:\` key instead, and that changes who chooses the selection set: to tag an entry with
+# \`KeyedFault:brokenId:<value>\` the edge has to KNOW that value, so it adds \`brokenId\` to the query
+# it sends the origin even when the client selected only \`nonce\`. The field is injected under the
+# edge's own alias and stripped back out of the answer before the client sees it.
+#
+# Which is why this type exists separately. An injected field can fail, and when it does the origin
+# returns an \`errors\` entry naming a field the client never asked for. What the edge does with that
+# entry is a promise nothing in this schema could reach before: \`Fault.broken\` is selected BY the
+# client, so an error from it is an ordinary GraphQL error and a test written on it measures the
+# ordinary path while calling it something else.
+#
+# It is a second type rather than one more field on \`Fault\`, deliberately. An \`of:\` key on \`Fault\`
+# would be injected into every query on every page that uses \`faulty\`, and if the injected field
+# throws there, \`docs/17\` and \`docs/18\` stop describing the demo they were measured against. Here
+# the behaviour is reached by asking for it and by nothing else.
+#
+# \`maxAge: 300\` and the static key match \`type Fault\` so the two are comparable side by side: the
+# same lifetime, the same coarse purge key, and one extra key derived from a field.
+type KeyedFault
+    @cacheControl(maxAge: 300, scope: PUBLIC)
+    @surrogateKey(of: "brokenId")
+    @surrogateKey(static: "fault") {
+    """Echoes the \`nonce\` the request asked with, so an answer can be tied to the request that produced it."""
+    nonce: String!
+
+    """ISO 8601, stamped when the resolver ran. Unchanged means the origin was not reached."""
+    observedAt: String!
+
+    """
+    The value the \`of:\` key is built from, and the field the edge injects to get it.
+
+    \`keyed-<nonce>\` when the request did not ask it to fail, so the answer carries
+    \`KeyedFault:brokenId:keyed-<nonce>\` and a purge can name it. \`failKey: true\` makes it throw
+    instead, which is the case worth having: the error names a field the client did not select.
+
+    Nullable for the reason \`Fault.broken\` is. A non-null field that throws nulls its parent and
+    keeps climbing, so the answer would be erased and the interesting shape, data beside an error
+    about an injected field, would never occur.
+    """
+    brokenId: ID
+}
+
 ####################################################################################################
 # Queries
 ####################################################################################################
@@ -311,6 +357,17 @@ type Query {
     # leave on a public demo: it travels in the cache key, so two callers never meet each other's
     # entry, and a run always addresses a key nothing has poisoned.
     faulty(nonce: String!, fail: Boolean! = false): Fault!
+
+    # The same idea one level down: here it is the KEY that fails, not the answer.
+    #
+    # \`type KeyedFault\` derives a surrogate key from \`brokenId\`, so the edge adds that field to the
+    # query it sends the origin whether or not the client selected it. \`failKey: true\` makes the
+    # injected field throw, which is the only way to produce an error about a field the client never
+    # asked for, and therefore the only way to watch what the edge does with one.
+    #
+    # \`nonce\` is required here for the same reason it is on \`faulty\`: it travels in the cache key, so
+    # a run addresses an entry nobody else shares.
+    keyedFault(nonce: String!, failKey: Boolean! = false): KeyedFault!
 }
 
 ####################################################################################################

@@ -172,6 +172,45 @@ describe("the schema field that fails", () => {
         ).toBe("n3");
     });
 
+    it("resolves the key field to a value a purge can be written against", async () => {
+        // The control for the injected-key case. `KeyedFault` derives a surrogate key from
+        // `brokenId`, so this value is what ends up in `gp-surrogate-key` as
+        // `KeyedFault:brokenId:keyed-<nonce>`. Derived from the nonce rather than random, or a
+        // reader could not construct the key they are about to purge.
+        const result = await run('{ keyedFault(nonce: "k1") { nonce brokenId } }');
+
+        expect(result.errors).toBeUndefined();
+        expect((result.data?.keyedFault as { brokenId: string } | undefined)?.brokenId).toBe(
+            "keyed-k1",
+        );
+    });
+
+    it("fails in the key field while the rest of the answer stands", async () => {
+        // The shape the edge's error stripping is about, and the one nothing in this schema could
+        // produce before: an error whose path names a field the CLIENT did not select. Executed
+        // here with `brokenId` written out, because a unit test has no edge to inject it; what this
+        // pins is that the failure stops at the nullable field instead of erasing the answer.
+        const result = await run('{ keyedFault(nonce: "k2", failKey: true) { nonce brokenId } }');
+
+        expect(result.errors?.length).toBe(1);
+        expect(result.errors?.[0]?.path).toEqual(["keyedFault", "brokenId"]);
+        expect(result.errors?.[0]?.message).toMatch(/KeyedFault\.brokenId was asked to fail/);
+        expect(
+            (result.data?.keyedFault as { nonce: string } | null)?.nonce,
+            "the fields that resolved must survive the injected one that did not",
+        ).toBe("k2");
+    });
+
+    it("answers without the key field at all when nobody asks for it", async () => {
+        // What a client's own document looks like before the edge expands it. The failure is
+        // attached to `brokenId` and to nothing else, so a query that does not reach it is an
+        // ordinary answer whichever way `failKey` is set.
+        const result = await run('{ keyedFault(nonce: "k3", failKey: true) { nonce } }');
+
+        expect(result.errors).toBeUndefined();
+        expect((result.data?.keyedFault as { nonce: string } | undefined)?.nonce).toBe("k3");
+    });
+
     it("names itself in the message, because that message reaches the customer", async () => {
         // It ends up in the client's `errors` array and in the portal's GraphQL tab. "Error" on its
         // own would send a reader looking for a defect that is not there.

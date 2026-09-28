@@ -28,6 +28,32 @@ export interface FaultAnswer {
     observedAt: string;
 }
 
+/** What `Query.keyedFault` hands down. `failKey` travels on the parent because the field that acts
+ * on it takes no arguments of its own: the edge injects `brokenId` for its key, and an injected
+ * field is written by the edge, so nothing the client sends can reach it except through here. */
+export interface KeyedFaultAnswer {
+    nonce: string;
+    observedAt: string;
+    failKey: boolean;
+}
+
+export function keyedFaultResolvers() {
+    return {
+        // Derived from the nonce rather than random, so the surrogate key on the answer is one a
+        // reader can predict and purge by hand: `KeyedFault:brokenId:keyed-<nonce>`.
+        brokenId: (root: KeyedFaultAnswer): string => {
+            if (root.failKey) {
+                throw deliberateFailure(
+                    `KeyedFault.brokenId was asked to fail (nonce ${root.nonce}): it is the field ` +
+                        `the edge injects to build this type's surrogate key, so the error names a ` +
+                        `field the client never selected`,
+                );
+            }
+            return `keyed-${root.nonce}`;
+        },
+    };
+}
+
 export function faultResolvers() {
     return {
         // The message names the field, because it ends up in the customer-visible `errors` array
