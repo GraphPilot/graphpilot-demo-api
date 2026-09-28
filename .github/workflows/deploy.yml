@@ -95,16 +95,32 @@ jobs:
                   ORIGIN_URL: ${{ vars.ORIGIN_URL }}
               run: |
                   set -euo pipefail
+
+                  # Two routes, because one of them proves almost nothing on its own.
+                  #
+                  # `/health` returns a constant before the worker has touched its key pair or its
+                  # Durable Object. On 2026-09-28 the demo answered it with a 200 for an hour while
+                  # every other route threw, so this gate would have waved the outage through and
+                  # the comment above it claimed the opposite.
+                  #
+                  # `/auth/jwks.json` is the cheapest route that exercises the rest: it loads the
+                  # key pair, which reaches the Durable Object when AUTH_PRIVATE_JWK is unset. It
+                  # is also unauthenticated, so the gate needs no credential of its own.
                   for attempt in 1 2 3 4 5 6 7 8 9 10; do
-                      code=$(curl -sS -o /dev/null -w '%{http_code}' "${ORIGIN_URL}/health" || echo 000)
-                      if [ "${code}" = "200" ]; then
+                      health=$(curl -sS -o /dev/null -w '%{http_code}' "${ORIGIN_URL}/health" || echo 000)
+                      jwks=$(curl -sS -o /dev/null -w '%{http_code}' "${ORIGIN_URL}/auth/jwks.json" || echo 000)
+                      if [ "${health}" = "200" ] && [ "${jwks}" = "200" ]; then
                           echo "origin healthy after ${attempt} attempt(s)"
                           exit 0
                       fi
-                      echo "attempt ${attempt}: /health answered ${code}"
+                      echo "attempt ${attempt}: /health answered ${health}, /auth/jwks.json answered ${jwks}"
                       sleep 5
                   done
-                  echo "the origin never answered 200 on /health; not publishing to the edge" >&2
+
+                  # The body carries the reason when the worker could name one: `src/worker.ts`
+                  # answers a key-loading failure instead of throwing, with the message redacted.
+                  echo "the origin did not answer 200 on both routes; not publishing to the edge" >&2
+                  curl -sS "${ORIGIN_URL}/auth/jwks.json" | head -c 500 >&2 || true
                   exit 1
 
             - name: Note the skipped health gate

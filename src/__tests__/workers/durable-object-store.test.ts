@@ -84,6 +84,63 @@ describe("DurableObjectStore", () => {
         expect((await store.category("audio"))?.name).toBe("Audio");
     });
 
+    /**
+     * `reset` does nothing when the catalogue already holds the seed, which is what stopped this
+     * demo rewriting four tables before every one of the system suite's ~150 tests. The decision
+     * rests on each mutation recording that it changed something, and a mutation that forgot to
+     * would be wrong in the worst way: `reset` would report success, write nothing, and hand the
+     * next test the previous one's data.
+     *
+     * One test per mutation, deliberately. The test above mutates three things and resets once, so
+     * a single remembered mutation would cover for two that forgot; only isolating them catches it.
+     */
+    describe("reset after each individual mutation", () => {
+        it("undoes a price change", async () => {
+            const store = storeNamed("reset-price");
+            await store.setPrice("p01", 999999);
+            await store.reset();
+            expect((await store.product("p01"))?.price).toBe(seed().products[0]?.price);
+        });
+
+        it("undoes an added review", async () => {
+            const store = storeNamed("reset-review");
+            const before = (await store.reviews("p01")).length;
+            await store.addReview({ productId: "p01", author: "a", body: "b", rating: 1 });
+            await store.reset();
+            expect(await store.reviews("p01")).toHaveLength(before);
+        });
+
+        it("undoes a stock reservation", async () => {
+            const store = storeNamed("reset-stock");
+            const before = (await store.inventory("p03")).available;
+            await store.reserveStock("p03", 2);
+            await store.reset();
+            const restored = await store.inventory("p03");
+            expect(restored.available).toBe(before);
+            expect(restored.reservedAt).toBeNull();
+        });
+
+        it("undoes a renamed category", async () => {
+            const store = storeNamed("reset-rename");
+            await store.renameCategory("audio", "Gone");
+            await store.reset();
+            expect((await store.category("audio"))?.name).toBe("Audio");
+        });
+
+        it("leaves an untouched catalogue exactly as it was", async () => {
+            // The other half: a reset that decides to do nothing must still leave a correct
+            // catalogue behind, so the saving is invisible to every caller.
+            const store = storeNamed("reset-clean");
+            const expected = seed();
+            await store.reset();
+            expect(await store.products()).toEqual(expected.products);
+            expect(await store.categories()).toEqual(expected.categories);
+            expect(await store.reviews("p01")).toEqual(
+                expected.reviews.filter((review) => review.productId === "p01"),
+            );
+        });
+    });
+
     it("filters products by category and searches by name", async () => {
         const store = storeNamed("reads");
         const audio = await store.products("audio");

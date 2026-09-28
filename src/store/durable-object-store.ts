@@ -109,7 +109,27 @@ CREATE TABLE IF NOT EXISTS faults (
     refused INTEGER NOT NULL,
     first_seen INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS catalogue_state (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    dirty INTEGER NOT NULL
+);
 `;
+
+/**
+ * Whether anything has changed the catalogue since it was last seeded.
+ *
+ * It exists to make `reset` free when there is nothing to undo. Durable Object storage is billed
+ * and rate limited by rows written, and on 2026-09-28 this demo exhausted the free tier's daily
+ * allowance and stopped answering: the system-test suite calls `reset` in `beforeEach`, so every
+ * one of its ~150 tests rewrote the whole catalogue, and the overwhelming majority of them never
+ * touched it. A test that invents its own cache key, which is that suite's own stated rule, has
+ * nothing to restore.
+ *
+ * One row, updated by the four mutations. `reset` on a clean catalogue now writes nothing at all
+ * rather than deleting and reinserting every row of four tables.
+ */
+const CATALOGUE_CLEAN = 0;
+const CATALOGUE_DIRTY = 1;
 
 /** Where the generated key pair is kept. Not a catalogue table, so `reset` does not touch it: a
  * reader holding a token should not be logged out by restoring the products. */
@@ -199,6 +219,7 @@ export class CatalogueObject extends DurableObject<unknown> {
             updatedAt,
             id,
         );
+        this.#markDirty();
         return toProduct(this.#requireProduct(id));
     }
 
@@ -223,6 +244,7 @@ export class CatalogueObject extends DurableObject<unknown> {
             review.rating,
             review.createdAt,
         );
+        this.#markDirty();
         return review;
     }
 
@@ -239,14 +261,52 @@ export class CatalogueObject extends DurableObject<unknown> {
             reservedAt,
             id,
         );
+        this.#markDirty();
         return this.inventory(id);
     }
 
     async reset(): Promise<void> {
+        // Nothing has changed the catalogue since it was last seeded, so it already holds the seed
+        // and restoring it would write every row for no effect. See `catalogue_state`.
+        if (!this.#dirty()) {
+            return;
+        }
         for (const table of ["products", "categories", "reviews", "inventory"]) {
             this.#sql.exec(`DELETE FROM ${table}`);
         }
         this.#seed();
+    }
+
+    /**
+     * Whether a mutation has run since the last seed.
+     *
+     * **A missing row counts as dirty**, which is the important half. An object that predates this
+     * table has a catalogue in an unknown state, quite possibly mutated by whatever ran last, and
+     * skipping the restore there would hand the next test somebody else's data. The first `reset`
+     * after this ships therefore does the full work and records the answer; every later one is
+     * free until something writes.
+     */
+    #dirty(): boolean {
+        const row = this.#sql
+            .exec<{ dirty: number }>("SELECT dirty FROM catalogue_state WHERE id = 1")
+            .toArray()[0];
+        return row === undefined || row.dirty === CATALOGUE_DIRTY;
+    }
+
+    /**
+     * Record that the catalogue no longer holds the seed.
+     *
+     * Called by every method that writes to one of the four catalogue tables. Missing a call here
+     * is the one way this optimisation can be wrong, and it would be wrong silently: a later
+     * `reset` would decide there is nothing to undo and leave a mutated catalogue in place for the
+     * next test. `src/__tests__/store.test.ts` therefore drives every mutation through a
+     * mutate-then-reset cycle rather than trusting the call sites.
+     */
+    #markDirty(): void {
+        this.#sql.exec(
+            "INSERT INTO catalogue_state (id, dirty) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET dirty = excluded.dirty",
+            CATALOGUE_DIRTY,
+        );
     }
 
     async categories(): Promise<Category[]> {
@@ -299,6 +359,7 @@ export class CatalogueObject extends DurableObject<unknown> {
             throw new NotFoundError("Category", id);
         }
         this.#sql.exec("UPDATE categories SET name = ? WHERE id = ?", name, id);
+        this.#markDirty();
         return { id, name };
     }
 
@@ -426,6 +487,13 @@ export class CatalogueObject extends DurableObject<unknown> {
                 entry.reservedAt,
             );
         }
+        // The catalogue now holds the seed by definition, which is what lets the next `reset` do
+        // nothing. Written here rather than in `reset` so the constructor's first seed records it
+        // too, and an object that has only ever been read never pays for a restore.
+        this.#sql.exec(
+            "INSERT INTO catalogue_state (id, dirty) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET dirty = excluded.dirty",
+            CATALOGUE_CLEAN,
+        );
     }
 
     #product(id: ProductId): ProductRow | undefined {

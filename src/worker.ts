@@ -182,11 +182,17 @@ export default {
             return handleReset(request, env, signatureChecked);
         }
 
-        // TEMPORARY DIAGNOSTIC (2026-09-28): the deployed worker throws on every route that needs
-        // the key pair, while `/health` answers, and the runtime logs are not reachable from here.
-        // This turns the exception into an answer so it can be read from outside. Every run of
-        // base64url-looking text is redacted, because a failure to parse the stored private JWK
-        // would otherwise put key material into a public response. REMOVE once the cause is known.
+        // A failure to load the key pair is answered, not thrown.
+        //
+        // Thrown, it reaches the caller as Cloudflare's "Worker threw exception" page, which names
+        // no cause, and the runtime logs behind it are not reachable from every machine that needs
+        // to diagnose this. On 2026-09-28 that cost an hour: the demo had exhausted the Durable
+        // Object free tier's row-write allowance, and from outside it was indistinguishable from a
+        // bad signing key, a broken schema deploy or a bad JWK.
+        //
+        // The message is redacted on the way out. A failure to parse the stored private JWK would
+        // otherwise publish key material on an unauthenticated route, which is a far worse problem
+        // than the one this is solving.
         let keys: DemoKeys;
         try {
             keys = await keysFor(env);
