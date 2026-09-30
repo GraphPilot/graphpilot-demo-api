@@ -59,8 +59,18 @@ on write" is only an honest claim if the origin serves the new value on the very
 The SQLite-backed Durable Object is what the Workers **free** plan supports. Cloudflare's pricing
 page puts it plainly: "Workers Free plan: Only Durable Objects with SQLite storage backend are
 available." It is the key-value backend that needs a paid plan. The free limits are 100k
-requests/day, 5M row reads/day, 100k rows written/day and 5 GB stored, all of them far above what a
-demo catalogue of twenty products uses.
+requests/day, 5M row reads/day, 100k rows written/day and 5 GB stored.
+
+**Rows written is the one to watch, and serving the demo is not what spends it.** Deletes count,
+and `POST /admin/reset` used to rewrite the whole catalogue: 51 rows deleted and 51 reinserted,
+about 102 rows a call. The system-test suite calls it before every test, so on 2026-09-28 a day of
+test runs spent the whole daily allowance and the demo stopped answering. A reset now writes
+nothing when nothing has changed the catalogue since the last seed (`catalogue_state`), which puts
+a suite run at roughly 1,400 rows, about 70 runs a day. That is comfortable rather than limitless,
+and the number scales with how many MUTATION tests exist, not with how often the suite runs.
+
+Turning on file parallelism in the suite, growing the seed, or adding a mutation without its
+`#markDirty()` are the three things that would change it.
 
 Signature verification guards `/graphql` (and `/admin/reset` on the Worker) and is on by default,
 so it will refuse everything you send by hand, because nothing local is signing.
