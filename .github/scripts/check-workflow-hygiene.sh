@@ -12,8 +12,10 @@
 #   3. A workflow that runs on pull requests cancels superseded runs.
 #   4. A pull-request workflow builds Rust in the debug profile: fat LTO is for the shipped
 #      artifact, built once on main.
-#   5. A job bound to the prod environment lives in a workflow that no branch push, pull
-#      request or schedule can start. prod deploys run from release tags; the environment
+#   5. A job bound to the prod environment (any spelling: plain, quoted, flow or block mapping)
+#      lives in a workflow that no branch push, pull request or schedule can start (a
+#      `push:` without `tags:`, `on: push`, `on: [push, ...]`, `branches:`, `branches-ignore:`,
+#      `schedule` and pull_request[_target] all count). prod deploys run from release tags; the environment
 #      refuses anything else, so such a job could only ever fail (or worse, be "fixed" by
 #      loosening the environment).
 #
@@ -70,6 +72,66 @@ is_pull_request_workflow() {
   code_has "$1" '^[[:space:]]*-?[[:space:]]*pull_request(_target)?[[:space:]]*:?[[:space:]]*$|^on:.*pull_request'
 }
 
+# Whether any job is bound to the environment prod: `environment: prod` (plain or quoted),
+# `environment: { name: prod }`, or `environment:` followed by an indented block with `name: prod`.
+has_prod_job() {
+  code_has "$1" "^[[:space:]]*environment:[[:space:]]*[\"']?prod[\"']?[[:space:]]*\$" && return 0
+  code_has "$1" "^[[:space:]]*environment:[[:space:]]*\\{([^}]*,)?[[:space:]]*name:[[:space:]]*[\"']?prod[\"']?[[:space:]]*[,}]" && return 0
+  [ "$(code_of "$1" | awk -v q="'" '
+    function indent(l) { match(l, /^[ ]*/); return RLENGTH }
+    /^[[:space:]]*$/ { next }
+    inblock && indent($0) <= base { inblock = 0 }
+    inblock && $0 ~ ("^[[:space:]]*name:[[:space:]]*[\"" q "]?prod[\"" q "]?[[:space:]]*$") { found = 1 }
+    /^[[:space:]]*environment:[[:space:]]*$/ { inblock = 1; base = indent($0) }
+    END { print found ? 1 : 0 }
+  ')" = 1 ]
+}
+
+# The top-level `on:` block (the `on:` line, quoted or not, up to the next key at indent 0), so
+# that a step input such as `with: push: true` or a dispatch input named `branches` is no trigger.
+on_block_of() {
+  code_of "$1" | awk -v q="'" '
+    /^[[:space:]]*$/ { next }
+    $0 ~ ("^[\"" q "]?on[\"" q "]?:") { inon = 1; print; next }
+    /^[^[:space:]]/ { inon = 0 }
+    inon { print }
+  '
+}
+
+# Whether a branch push, pull request or schedule can start the workflow. A `push:` block
+# with `tags:` is tag-only; without it (bare, or only `paths:`) every branch push starts it.
+# Only the top-level `on:` block counts.
+is_branch_startable() {
+  is_pull_request_workflow "$1" && return 0
+  local on
+  on="$(on_block_of "$1")"
+  grep -E '^["'"'"']?on["'"'"']?:[[:space:]]*(push|schedule)[[:space:]]*$' <<<"$on" >/dev/null && return 0
+  grep -E '^["'"'"']?on["'"'"']?:[[:space:]]*\[([^]]*,)?[[:space:]]*(push|schedule)[[:space:]]*[],]' <<<"$on" >/dev/null && return 0
+  # Block form: `schedule`, `push` (without tags) and `branches[-ignore]` under any trigger but
+  # workflow_dispatch / workflow_call (whose inputs may be named anything).
+  [ "$(awk '
+    function indent(l) { match(l, /^[ ]*/); return RLENGTH }
+    /^[[:space:]]*$/ { next }
+    NR == 1 { next }
+    child == "" { child = indent($0) }
+    inblock && indent($0) <= base { if (!tags) hit = 1; inblock = 0 }
+    inblock && /^[[:space:]]*tags:/ { tags = 1 }
+    indent($0) == child {
+      key = $0; sub(/^[[:space:]]*-?[[:space:]]*/, "", key); sub(/[[:space:]]*:.*$/, "", key)
+      trigger = key
+      if (key == "schedule") hit = 1
+      if ($0 ~ /^[[:space:]]*-[[:space:]]*push[[:space:]]*$/) hit = 1
+      if (key == "push") {
+        rest = $0; sub(/^[[:space:]]*push:[[:space:]]*/, "", rest)
+        if (rest == "" || rest ~ /^\{[[:space:]]*\}$/) { inblock = 1; base = indent($0); tags = 0 }
+        else if (rest !~ /tags/) hit = 1
+      }
+    }
+    trigger != "workflow_dispatch" && trigger != "workflow_call" && /^[[:space:]]*(branches|branches-ignore):/ { hit = 1 }
+    END { if (inblock && !tags) hit = 1; print hit ? 1 : 0 }
+  ' <<<"$on")" = 1 ]
+}
+
 check_workflow() {
   local file="$1"
   if is_pull_request_workflow "$file"; then
@@ -79,10 +141,8 @@ check_workflow() {
       report "$file" "pull_request workflow builds Rust in a release profile"
     fi
   fi
-  if code_has "$file" '^[[:space:]]*environment:[[:space:]]*prod[[:space:]]*$'; then
-    if is_pull_request_workflow "$file" || code_has "$file" '^[[:space:]]*(schedule|branches):'; then
-      report "$file" "prod job in a workflow that a branch push, pull request or schedule can start"
-    fi
+  if has_prod_job "$file" && is_branch_startable "$file"; then
+    report "$file" "prod job in a workflow that a branch push, pull request or schedule can start"
   fi
 }
 

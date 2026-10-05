@@ -161,6 +161,182 @@ jobs:
     steps:
       - run: true'
 
+expect prod_mapping_on_branch 1 "prod job in a workflow that a branch push" 'on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment:
+      name: prod
+      url: https://example.com
+    steps:
+      - run: true'
+
+expect prod_flow_mapping_on_branch 1 "prod job in a workflow that a branch push" 'on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: { name: prod, url: https://example.com }
+    steps:
+      - run: true'
+
+expect prod_quoted_on_branch 1 "prod job in a workflow that a branch push" 'on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: "prod"
+    steps:
+      - run: true'
+
+expect prod_single_quoted_on_branch 1 "prod job in a workflow that a branch push" 'on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: '\''prod'\''
+    steps:
+      - run: true'
+
+expect prod_on_bare_push 1 "prod job in a workflow that a branch push" 'on:
+  push:
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: prod
+    steps:
+      - run: true'
+
+expect prod_on_inline_push 1 "prod job in a workflow that a branch push" 'on: [push, workflow_dispatch]
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: prod
+    steps:
+      - run: true'
+
+expect prod_on_push_paths_only 1 "prod job in a workflow that a branch push" 'on:
+  push:
+    paths: ["src/**"]
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: prod
+    steps:
+      - run: true'
+
+expect prod_on_branches_ignore 1 "prod job in a workflow that a branch push" 'on:
+  push:
+    branches-ignore: [dev]
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: prod
+    steps:
+      - run: true'
+
+expect prod_on_inline_schedule 1 "prod job in a workflow that a branch push" 'on: [schedule, workflow_dispatch]
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: prod
+    steps:
+      - run: true'
+
+expect prod_mapping_on_tag 0 "workflow hygiene: OK" 'on:
+  push:
+    tags: ["v*"]
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment:
+      name: "prod"
+    steps:
+      - run: true'
+
+expect prod_on_tag_with_paths 0 "workflow hygiene: OK" 'on:
+  push:
+    tags: ["v*"]
+    paths: ["src/**"]
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: prod
+    steps:
+      - run: true'
+
+expect prod_ops_on_branch 0 "workflow hygiene: OK" 'on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: prod-ops
+    steps:
+      - run: true'
+
+expect production_on_branch 0 "workflow hygiene: OK" 'on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: production
+    steps:
+      - run: true'
+
+expect prod_on_dispatch_only 0 "workflow hygiene: OK" 'on:
+  workflow_dispatch:
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: prod
+    steps:
+      - run: true'
+
+expect prod_on_tag_with_docker_push_input 0 "workflow hygiene: OK" 'on:
+  push:
+    tags: ["v*"]
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: prod
+    steps:
+      - run: true
+      - uses: docker/build-push-action@0123456789abcdef0123456789abcdef01234567 # v6.1.0
+        with:
+          push: true'
+
+expect prod_on_dispatch_with_docker_push_input 0 "workflow hygiene: OK" 'on: workflow_dispatch
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: prod
+    steps:
+      - run: true
+      - uses: docker/build-push-action@0123456789abcdef0123456789abcdef01234567 # v6.1.0
+        with:
+          push: true'
+
+expect prod_on_dispatch_with_branches_input 0 "workflow hygiene: OK" 'on:
+  workflow_dispatch:
+    inputs:
+      branches:
+        description: which
+        required: false
+jobs:
+  deploy:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: prod
+    steps:
+      - run: true
+'
+
 expect comment_is_not_code 0 "workflow hygiene: OK" '# runs-on: ubuntu-latest used to be here
 on: workflow_dispatch
 jobs:
