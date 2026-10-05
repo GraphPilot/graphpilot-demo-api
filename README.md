@@ -170,9 +170,15 @@ renames what is deployed.
 The stage platform has its own demo: Worker `graphpilot-demo-api-stage` (`wrangler.jsonc`,
 `env.stage`), its own Durable Object, catalogue and key pair, published as the stage service
 `demo-api` at `demo-api.stage.graphpilot.cloud`. It deploys from the GitHub environment `stage`,
-which takes the same names as production plus three of its own. Define them on the **environment**,
-never on the repository: a name the environment lacks is filled from the repository, which is
-production's, and `scripts/deploy-target.ts` refuses the deploy rather than publish there.
+which takes its own names alongside production's. Define them on the **environment**, never on the
+repository: a name the environment lacks is filled from the repository, which is production's, and
+`scripts/deploy-target.ts` refuses the deploy rather than publish there.
+
+The two secrets are named differently on stage (`STAGE_SIGNING_KEY`, `GPILOT_STAGE_TOKEN`) because
+the repository holds production's `SIGNING_KEY` and `GPILOT_TOKEN`: under a name the repository
+never defines, a missing stage secret stays empty and fails the run before anything is deployed,
+instead of quietly handing production's key to the stage Worker. For the same reason the stage leg
+never sends `AUTH_PRIVATE_JWK`; its Durable Object generates its own key pair.
 
 | Name | Kind | Value |
 | --- | --- | --- |
@@ -180,10 +186,17 @@ production's, and `scripts/deploy-target.ts` refuses the deploy rather than publ
 | `GPILOT_API_URL` | variable | `https://api.stage.graphpilot.io/graphql` |
 | `DEMO_JWKS_URL` | variable | `https://demo-api.stage.graphpilot.cloud/auth/jwks.json` |
 | `GPILOT_SERVICE` | variable | `demo-api` |
-| `ORIGIN_URL` | variable | the stage Worker's own URL, after its first deploy |
-| `SIGNING_KEY` | secret | the stage service's signing key, from the stage portal |
-| `GPILOT_TOKEN` | secret | a stage API key that may deploy `demo-api` |
+| `ORIGIN_URL` | variable | `https://graphpilot-demo-api-stage.<subdomain>.workers.dev`, set **before** the first stage deploy |
+| `STAGE_SIGNING_KEY` | secret | the stage service's signing key, from the stage portal |
+| `GPILOT_STAGE_TOKEN` | secret | a stage API key that may deploy `demo-api` |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | secret | Workers deploy for the stage Worker. Environment-level, because Workstream H moves the production ones into `production` and deletes the repository copies |
+
+`ORIGIN_URL` is a repository variable too, holding the production Worker's address, so a stage
+environment without its own would health-check production and pass. The stage Worker's address is
+known before it exists: the Worker name `graphpilot-demo-api-stage` on the account's `workers.dev`
+subdomain (the same subdomain as production's `ORIGIN_URL`). Set it first; the deploy refuses an
+`ORIGIN_URL` whose first label is anything else. Unlike production's, the stage demo's very first
+deploy is then health-gated like every later one.
 
 The stage leg runs only while the repository variable `STAGE_DEPLOY_ENABLED` is `true`. Set it
 last.

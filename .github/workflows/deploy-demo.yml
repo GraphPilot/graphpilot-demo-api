@@ -45,13 +45,17 @@ jobs:
 
             # Before anything is deployed. On the stage leg this proves the stage environment holds
             # stage's values rather than the repository's production fallbacks
-            # (scripts/deploy-target.ts); on the production leg it changes nothing.
+            # (scripts/deploy-target.ts); on the production leg it changes nothing. The two stage
+            # secrets reach it only as "true" or "false", never as values.
             - name: Check the deploy target
               env:
                   TARGET_ENVIRONMENT: ${{ inputs.environment }}
                   DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
                   GPILOT_API_URL: ${{ vars.GPILOT_API_URL }}
                   DEMO_JWKS_URL: ${{ vars.DEMO_JWKS_URL }}
+                  ORIGIN_URL: ${{ vars.ORIGIN_URL }}
+                  STAGE_SIGNING_KEY_SET: ${{ secrets.STAGE_SIGNING_KEY != '' }}
+                  GPILOT_STAGE_TOKEN_SET: ${{ secrets.GPILOT_STAGE_TOKEN != '' }}
               run: node scripts/deploy-target.ts check
 
             - name: Deploy the worker
@@ -60,21 +64,35 @@ jobs:
                   CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
               run: pnpm exec wrangler deploy ${WRANGLER_ENV:+--env "$WRANGLER_ENV"}
 
+            # The secret names are chosen here, in shell, and not with `cond && a || b` in an
+            # expression: that form falls through to production's secret whenever the stage one is
+            # empty. The stage leg reads only STAGE_SIGNING_KEY, which the repository never holds,
+            # and never sends AUTH_PRIVATE_JWK, which the repository holds for production.
             - name: Push the worker secrets
               env:
                   CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
                   CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                  TARGET_ENVIRONMENT: ${{ inputs.environment }}
                   SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+                  STAGE_SIGNING_KEY: ${{ secrets.STAGE_SIGNING_KEY }}
                   AUTH_PRIVATE_JWK: ${{ secrets.AUTH_PRIVATE_JWK }}
               run: |
                   set -euo pipefail
-                  if [ -z "${SIGNING_KEY}" ]; then
+                  if [ "${TARGET_ENVIRONMENT}" = "production" ]; then
+                      signing_key="${SIGNING_KEY}"
+                      auth_private_jwk="${AUTH_PRIVATE_JWK}"
+                  else
+                      signing_key="${STAGE_SIGNING_KEY}"
+                      auth_private_jwk=""
+                  fi
+                  unset SIGNING_KEY STAGE_SIGNING_KEY AUTH_PRIVATE_JWK
+                  if [ -z "${signing_key}" ]; then
                       echo "SIGNING_KEY is empty: the origin would answer 500 to every request." >&2
                       exit 1
                   fi
-                  printf '%s' "${SIGNING_KEY}" | pnpm exec wrangler secret put SIGNING_KEY ${WRANGLER_ENV:+--env "$WRANGLER_ENV"}
-                  if [ -n "${AUTH_PRIVATE_JWK}" ]; then
-                      printf '%s' "${AUTH_PRIVATE_JWK}" | pnpm exec wrangler secret put AUTH_PRIVATE_JWK ${WRANGLER_ENV:+--env "$WRANGLER_ENV"}
+                  printf '%s' "${signing_key}" | pnpm exec wrangler secret put SIGNING_KEY ${WRANGLER_ENV:+--env "$WRANGLER_ENV"}
+                  if [ -n "${auth_private_jwk}" ]; then
+                      printf '%s' "${auth_private_jwk}" | pnpm exec wrangler secret put AUTH_PRIVATE_JWK ${WRANGLER_ENV:+--env "$WRANGLER_ENV"}
                   else
                       echo "AUTH_PRIVATE_JWK not set: the Durable Object's own generated key stays in use."
                   fi
@@ -124,13 +142,25 @@ jobs:
                       node scripts/deploy-target.ts render gpilot.toml gpilot.deploy.toml
                   fi
 
+            # The stage leg deploys with GPILOT_STAGE_TOKEN, never with GPILOT_TOKEN, so a missing
+            # stage token cannot fall back to the repository's production one.
             - name: Publish the schema and config to the edge
               env:
+                  TARGET_ENVIRONMENT: ${{ inputs.environment }}
                   GPILOT_TOKEN: ${{ secrets.GPILOT_TOKEN }}
+                  GPILOT_STAGE_TOKEN: ${{ secrets.GPILOT_STAGE_TOKEN }}
                   API_URL: ${{ vars.GPILOT_API_URL }}
                   SERVICE: ${{ vars.GPILOT_SERVICE }}
               run: |
                   set -euo pipefail
+                  if [ "${TARGET_ENVIRONMENT}" != "production" ]; then
+                      if [ -z "${GPILOT_STAGE_TOKEN}" ]; then
+                          echo "GPILOT_STAGE_TOKEN is empty on the ${TARGET_ENVIRONMENT} leg; not publishing." >&2
+                          exit 1
+                      fi
+                      export GPILOT_TOKEN="${GPILOT_STAGE_TOKEN}"
+                  fi
+                  unset GPILOT_STAGE_TOKEN
                   # Exported only when set: the production leg keeps the CLI's own default.
                   if [ -n "${API_URL}" ]; then
                       export GPILOT_API_URL="${API_URL}"

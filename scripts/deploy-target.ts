@@ -8,6 +8,11 @@
  * would hand the CLI no URL, and the CLI defaults to production: the stage leg would publish its
  * schema to the production demo service with whatever token it found. So the stage leg proves it
  * is configured as stage before it deploys anything.
+ *
+ * Secrets fall back the same way, so the stage leg reads its own names (`STAGE_SIGNING_KEY`,
+ * `GPILOT_STAGE_TOKEN`) that the repository never defines: a missing one stays empty and is
+ * refused here, rather than resolving to production's value. `ORIGIN_URL` is a repository
+ * variable too, so a stage leg would otherwise health-check the production Worker.
  */
 
 import { readFileSync, writeFileSync } from "node:fs";
@@ -15,6 +20,8 @@ import { fileURLToPath } from "node:url";
 
 export const PRODUCTION_API_HOST = "api.graphpilot.io";
 export const STAGE_DEMO_HOST_SUFFIX = ".stage.graphpilot.cloud";
+/** The stage Worker's name in `wrangler.jsonc`, and so the first label of its workers.dev host. */
+export const STAGE_WORKER_NAME = "graphpilot-demo-api-stage";
 
 export interface DeployTarget {
     /** The GitHub environment this leg runs in: `production` or `stage`. */
@@ -25,14 +32,24 @@ export interface DeployTarget {
     readonly apiUrl: string;
     /** `vars.DEMO_JWKS_URL`, the stage demo's own key set. */
     readonly jwksUrl: string;
+    /** `vars.ORIGIN_URL`. Empty skips the health gate; on stage it must be the stage Worker. */
+    readonly originUrl: string;
+    /** Whether `secrets.STAGE_SIGNING_KEY` is non-empty. Only the stage leg reads it. */
+    readonly stageSigningKeySet: boolean;
+    /** Whether `secrets.GPILOT_STAGE_TOKEN` is non-empty. Only the stage leg reads it. */
+    readonly stageDeployTokenSet: boolean;
 }
 
-function hostOf(value: string): string | undefined {
+function urlOf(value: string): URL | undefined {
     try {
-        return new URL(value).host;
+        return new URL(value);
     } catch {
         return undefined;
     }
+}
+
+function hostOf(value: string): string | undefined {
+    return urlOf(value)?.host;
 }
 
 /** Every reason this leg must not deploy. An empty list means it may. */
@@ -69,17 +86,42 @@ export function deployTargetProblems(target: DeployTarget): string[] {
             `DEMO_JWKS_URL must be the stage demo's key set (*${STAGE_DEMO_HOST_SUFFIX}), got "${target.jwksUrl}"`,
         );
     }
+    if (target.originUrl !== "") {
+        const originLabel = urlOf(target.originUrl)?.hostname.split(".")[0];
+        if (originLabel !== STAGE_WORKER_NAME) {
+            problems.push(
+                `ORIGIN_URL is "${target.originUrl}" on the stage leg; it must be the stage Worker (https://${STAGE_WORKER_NAME}.<subdomain>.workers.dev), set on the stage environment`,
+            );
+        }
+    }
+    if (!target.stageSigningKeySet) {
+        problems.push(
+            "STAGE_SIGNING_KEY is unset on the stage leg; set it on the stage environment to the stage service's signing key",
+        );
+    }
+    if (!target.stageDeployTokenSet) {
+        problems.push(
+            "GPILOT_STAGE_TOKEN is unset on the stage leg; set it on the stage environment to a stage API key that may deploy demo-api",
+        );
+    }
     return problems;
 }
 
-/** `gpilot.toml` with the demo provider's `jwks_url` replaced. Refuses anything but exactly one. */
+/**
+ * `gpilot.toml` with the demo provider's `jwks_url` replaced. Refuses anything but exactly one,
+ * and a replacement that is not a URL.
+ */
 export function renderGpilotConfig(toml: string, jwksUrl: string): string {
+    if (urlOf(jwksUrl) === undefined) {
+        throw new Error(`DEMO_JWKS_URL "${jwksUrl}" is not a URL`);
+    }
     const pattern = /^jwks_url = ".*"$/gm;
     const found = toml.match(pattern)?.length ?? 0;
     if (found !== 1) {
         throw new Error(`expected exactly one jwks_url line in gpilot.toml, found ${found}`);
     }
-    return toml.replace(pattern, `jwks_url = "${jwksUrl}"`);
+    // A replacer function, so `$&`, `$1` or `$$` in the URL are written as they are.
+    return toml.replace(pattern, () => `jwks_url = "${jwksUrl}"`);
 }
 
 function main(argv: readonly string[]): void {
@@ -92,6 +134,9 @@ function main(argv: readonly string[]): void {
             declaredTarget: env.DEPLOY_TARGET ?? "",
             apiUrl: env.GPILOT_API_URL ?? "",
             jwksUrl: env.DEMO_JWKS_URL ?? "",
+            originUrl: env.ORIGIN_URL ?? "",
+            stageSigningKeySet: env.STAGE_SIGNING_KEY_SET === "true",
+            stageDeployTokenSet: env.GPILOT_STAGE_TOKEN_SET === "true",
         });
         for (const problem of problems) {
             console.error(`::error::${problem}`);

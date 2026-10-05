@@ -11,6 +11,19 @@ const stage = {
     declaredTarget: "stage",
     apiUrl: "https://api.stage.graphpilot.io/graphql",
     jwksUrl: "https://demo-api.stage.graphpilot.cloud/auth/jwks.json",
+    originUrl: "https://graphpilot-demo-api-stage.graphpilot.workers.dev",
+    stageSigningKeySet: true,
+    stageDeployTokenSet: true,
+};
+
+const production = {
+    environment: "production",
+    declaredTarget: "",
+    apiUrl: "",
+    jwksUrl: "",
+    originUrl: "https://graphpilot-demo-api.graphpilot.workers.dev",
+    stageSigningKeySet: false,
+    stageDeployTokenSet: false,
 };
 
 describe("deployTargetProblems", () => {
@@ -19,14 +32,8 @@ describe("deployTargetProblems", () => {
     });
 
     it("lets the production leg deploy with nothing set, as it always has", () => {
-        expect(
-            deployTargetProblems({
-                environment: "production",
-                declaredTarget: "",
-                apiUrl: "",
-                jwksUrl: "",
-            }),
-        ).toEqual([]);
+        expect(deployTargetProblems(production)).toEqual([]);
+        expect(deployTargetProblems({ ...production, originUrl: "" })).toEqual([]);
     });
 
     it("stops a stage leg whose GPILOT_API_URL fell through to nothing", () => {
@@ -64,6 +71,51 @@ describe("deployTargetProblems", () => {
         );
     });
 
+    it("stops a stage leg whose ORIGIN_URL fell through to the production Worker", () => {
+        expect(
+            deployTargetProblems({
+                ...stage,
+                originUrl: "https://graphpilot-demo-api.graphpilot.workers.dev",
+            }).join("\n"),
+        ).toMatch(/ORIGIN_URL/);
+    });
+
+    it("stops a stage leg whose ORIGIN_URL only contains the stage Worker's name", () => {
+        expect(
+            deployTargetProblems({
+                ...stage,
+                originUrl: "https://graphpilot-demo-api.graphpilot-demo-api-stage.workers.dev",
+            }).join("\n"),
+        ).toMatch(/ORIGIN_URL/);
+    });
+
+    it("lets a stage leg run with ORIGIN_URL unset, which skips the health gate", () => {
+        expect(deployTargetProblems({ ...stage, originUrl: "" })).toEqual([]);
+    });
+
+    it("stops a stage leg without its own signing key", () => {
+        expect(deployTargetProblems({ ...stage, stageSigningKeySet: false }).join("\n")).toMatch(
+            /STAGE_SIGNING_KEY/,
+        );
+    });
+
+    it("stops a stage leg without its own deploy token", () => {
+        expect(deployTargetProblems({ ...stage, stageDeployTokenSet: false }).join("\n")).toMatch(
+            /GPILOT_STAGE_TOKEN/,
+        );
+    });
+
+    it("leaves the production leg alone whatever the stage-only names hold", () => {
+        expect(
+            deployTargetProblems({
+                ...production,
+                originUrl: "https://example.com",
+                stageSigningKeySet: true,
+                stageDeployTokenSet: true,
+            }),
+        ).toEqual([]);
+    });
+
     it("refuses an environment it does not know", () => {
         expect(deployTargetProblems({ ...stage, environment: "staging" })).toEqual([
             'unknown environment "staging", expected production or stage',
@@ -84,6 +136,21 @@ describe("renderGpilotConfig", () => {
     it("refuses a config with no jwks_url line", () => {
         expect(() => renderGpilotConfig("[auth.providers.demo]\n", stage.jwksUrl)).toThrow(
             /found 0/,
+        );
+    });
+
+    it("writes a URL holding `$` sequences literally", () => {
+        const url = "https://demo-api.stage.graphpilot.cloud/$&/$1/$$/jwks.json";
+        expect(renderGpilotConfig(toml, url)).toContain(`jwks_url = "${url}"`);
+    });
+
+    it("refuses an empty jwks url", () => {
+        expect(() => renderGpilotConfig(toml, "")).toThrow(/not a URL/);
+    });
+
+    it("refuses a jwks url that is not a URL", () => {
+        expect(() => renderGpilotConfig(toml, "demo-api.stage.graphpilot.cloud")).toThrow(
+            /not a URL/,
         );
     });
 
