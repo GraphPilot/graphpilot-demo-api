@@ -6,7 +6,13 @@
         "useIgnoreFile": true
     },
     "files": {
-        "includes": ["src/**/*.ts", "*.ts", "*.json", "!src/worker-configuration.d.ts"]
+        "includes": [
+            "src/**/*.ts",
+            "scripts/**/*.ts",
+            "*.ts",
+            "*.json",
+            "!src/worker-configuration.d.ts"
+        ]
     },
     "formatter": {
         "enabled": true,
