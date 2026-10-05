@@ -19,6 +19,10 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 export const PRODUCTION_API_HOST = "api.graphpilot.io";
+/** The only API host the stage leg may publish to. A positive match, so nothing else slips by. */
+export const STAGE_API_HOST = "api.stage.graphpilot.io";
+/** The `wrangler.jsonc` environment that names the stage Worker. */
+export const STAGE_WRANGLER_ENV = "stage";
 export const STAGE_DEMO_HOST_SUFFIX = ".stage.graphpilot.cloud";
 /** The stage Worker's name in `wrangler.jsonc`, and so the first label of its workers.dev host. */
 export const STAGE_WORKER_NAME = "graphpilot-demo-api-stage";
@@ -26,6 +30,11 @@ export const STAGE_WORKER_NAME = "graphpilot-demo-api-stage";
 export interface DeployTarget {
     /** The GitHub environment this leg runs in: `production` or `stage`. */
     readonly environment: string;
+    /**
+     * The workflow's `wrangler-env` input: empty for the top-level (production) Worker, `stage`
+     * for the stage Worker. Checked so a leg can never write its secrets into the other Worker.
+     */
+    readonly wranglerEnv: string;
     /** `vars.DEPLOY_TARGET`, defined on the stage environment only, never on the repository. */
     readonly declaredTarget: string;
     /** `vars.GPILOT_API_URL`. Empty on production, where the CLI's default is the right one. */
@@ -55,18 +64,29 @@ function hostOf(value: string): string | undefined {
 /** Every reason this leg must not deploy. An empty list means it may. */
 export function deployTargetProblems(target: DeployTarget): string[] {
     if (target.environment === "production") {
-        if (target.apiUrl !== "" && hostOf(target.apiUrl) !== PRODUCTION_API_HOST) {
-            return [
-                `GPILOT_API_URL is ${target.apiUrl} on the production leg; leave it unset or point it at ${PRODUCTION_API_HOST}`,
-            ];
+        const problems: string[] = [];
+        if (target.wranglerEnv !== "") {
+            problems.push(
+                `the production leg runs with wrangler env "${target.wranglerEnv}"; it must deploy the top-level Worker (no wrangler env)`,
+            );
         }
-        return [];
+        if (target.apiUrl !== "" && hostOf(target.apiUrl) !== PRODUCTION_API_HOST) {
+            problems.push(
+                `GPILOT_API_URL is ${target.apiUrl} on the production leg; leave it unset or point it at ${PRODUCTION_API_HOST}`,
+            );
+        }
+        return problems;
     }
     if (target.environment !== "stage") {
         return [`unknown environment "${target.environment}", expected production or stage`];
     }
 
     const problems: string[] = [];
+    if (target.wranglerEnv !== STAGE_WRANGLER_ENV) {
+        problems.push(
+            `the stage leg runs with wrangler env "${target.wranglerEnv}"; it must be "${STAGE_WRANGLER_ENV}", or its secrets land in the production Worker`,
+        );
+    }
     if (target.declaredTarget !== "stage") {
         problems.push(
             `DEPLOY_TARGET is "${target.declaredTarget}" on the stage leg; set it to "stage" on the stage environment, never on the repository`,
@@ -77,8 +97,10 @@ export function deployTargetProblems(target: DeployTarget): string[] {
         problems.push(
             "GPILOT_API_URL is unset or not a URL on the stage leg; without it the CLI deploys to production",
         );
-    } else if (apiHost === PRODUCTION_API_HOST) {
-        problems.push(`GPILOT_API_URL points at ${PRODUCTION_API_HOST} on the stage leg`);
+    } else if (apiHost !== STAGE_API_HOST) {
+        problems.push(
+            `GPILOT_API_URL points at ${apiHost} on the stage leg; it must be exactly ${STAGE_API_HOST}`,
+        );
     }
     const jwksHost = hostOf(target.jwksUrl);
     if (jwksHost === undefined || !jwksHost.endsWith(STAGE_DEMO_HOST_SUFFIX)) {
@@ -131,6 +153,7 @@ function main(argv: readonly string[]): void {
     if (command === "check") {
         const problems = deployTargetProblems({
             environment: env.TARGET_ENVIRONMENT ?? "",
+            wranglerEnv: env.WRANGLER_ENV ?? "",
             declaredTarget: env.DEPLOY_TARGET ?? "",
             apiUrl: env.GPILOT_API_URL ?? "",
             jwksUrl: env.DEMO_JWKS_URL ?? "",

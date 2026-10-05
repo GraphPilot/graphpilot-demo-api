@@ -8,6 +8,7 @@ import { deployTargetProblems, renderGpilotConfig } from "../../scripts/deploy-t
 
 const stage = {
     environment: "stage",
+    wranglerEnv: "stage",
     declaredTarget: "stage",
     apiUrl: "https://api.stage.graphpilot.io/graphql",
     jwksUrl: "https://demo-api.stage.graphpilot.cloud/auth/jwks.json",
@@ -18,6 +19,7 @@ const stage = {
 
 const production = {
     environment: "production",
+    wranglerEnv: "",
     declaredTarget: "",
     apiUrl: "",
     jwksUrl: "",
@@ -48,6 +50,51 @@ describe("deployTargetProblems", () => {
                 "\n",
             ),
         ).toMatch(/points at api\.graphpilot\.io on the stage leg/);
+    });
+
+    it("stops a stage leg pointed at production's API through a trailing-dot host", () => {
+        expect(
+            deployTargetProblems({ ...stage, apiUrl: "https://api.graphpilot.io./graphql" }).join(
+                "\n",
+            ),
+        ).toMatch(/points at api\.graphpilot\.io\. on the stage leg/);
+    });
+
+    it("stops a stage leg pointed at any API host but stage's own", () => {
+        for (const apiUrl of [
+            "https://api.stage.graphpilot.io./graphql",
+            "https://api.stage.graphpilot.io.evil.example/graphql",
+            "https://stage.graphpilot.io/graphql",
+            "https://api.stage.graphpilot.io:8443/graphql",
+            "https://localhost/graphql",
+        ]) {
+            expect(deployTargetProblems({ ...stage, apiUrl }).join("\n"), apiUrl).toMatch(
+                /must be exactly api\.stage\.graphpilot\.io/,
+            );
+        }
+    });
+
+    it("lets a stage leg use stage's API host however the URL is spelled around it", () => {
+        expect(
+            deployTargetProblems({
+                ...stage,
+                apiUrl: "https://API.Stage.GraphPilot.io:443/graphql",
+            }),
+        ).toEqual([]);
+    });
+
+    it("stops a stage leg that is not bound to the stage Worker", () => {
+        for (const wranglerEnv of ["", "production", "staging"]) {
+            expect(deployTargetProblems({ ...stage, wranglerEnv }).join("\n"), wranglerEnv).toMatch(
+                /the stage leg runs with wrangler env/,
+            );
+        }
+    });
+
+    it("stops the production leg if it is bound to any wrangler env", () => {
+        expect(deployTargetProblems({ ...production, wranglerEnv: "stage" })).toEqual([
+            'the production leg runs with wrangler env "stage"; it must deploy the top-level Worker (no wrangler env)',
+        ]);
     });
 
     it("stops a stage leg its environment does not declare as stage", () => {

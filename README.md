@@ -172,7 +172,10 @@ The stage platform has its own demo: Worker `graphpilot-demo-api-stage` (`wrangl
 `demo-api` at `demo-api.stage.graphpilot.cloud`. It deploys from the GitHub environment `stage`,
 which takes its own names alongside production's. Define them on the **environment**, never on the
 repository: a name the environment lacks is filled from the repository, which is production's, and
-`scripts/deploy-target.ts` refuses the deploy rather than publish there.
+`scripts/deploy-target.ts` refuses the deploy rather than publish there. It also refuses a stage
+`GPILOT_API_URL` whose host is anything but exactly `api.stage.graphpilot.io`, and binds each leg
+to its Worker: the stage leg must run with wrangler env `stage`, the production leg with none, so
+neither can write its secrets into the other's Worker.
 
 The two secrets are named differently on stage (`STAGE_SIGNING_KEY`, `GPILOT_STAGE_TOKEN`) because
 the repository holds production's `SIGNING_KEY` and `GPILOT_TOKEN`: under a name the repository
