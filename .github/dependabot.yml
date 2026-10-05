@@ -1,0 +1,10 @@
+version: 2
+updates:
+  # GitHub Actions, pinned to commit SHAs with the version in a trailing comment; Dependabot
+  # proposes the next SHA.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
