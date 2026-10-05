@@ -345,5 +345,82 @@ jobs:
     steps:
       - run: true'
 
+expect pr_inline_empty_without_cancel 1 "pull_request workflow without cancel-in-progress: true" 'on:
+  pull_request: {}
+jobs:
+  a:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    steps:
+      - run: true'
+
+expect pr_inline_branches_without_cancel 1 "pull_request workflow without cancel-in-progress: true" 'on:
+  pull_request: { branches: [main] }
+jobs:
+  a:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    steps:
+      - run: true'
+
+expect pr_inline_types_without_cancel 1 "pull_request workflow without cancel-in-progress: true" 'on:
+  pull_request: {types: [opened]}
+jobs:
+  a:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    steps:
+      - run: true'
+
+expect pr_target_inline_without_cancel 1 "pull_request workflow without cancel-in-progress: true" 'on:
+  pull_request_target: { branches: [main] }
+jobs:
+  a:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    steps:
+      - run: true'
+
+expect pr_inline_with_cancel_clean 0 "workflow hygiene: OK" 'on:
+  pull_request: { branches: [main] }
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  a:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    steps:
+      - run: true'
+
+expect pr_inline_release_profile 1 "builds Rust in a release profile" 'on:
+  pull_request: {}
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  a:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    steps:
+      - run: cargo build --release'
+
+expect prod_on_inline_pull_request 1 "prod job in a workflow" 'on:
+  pull_request: {}
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  a:
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    environment: prod
+    steps:
+      - run: true'
+
+expect event_name_expression_is_not_a_trigger 0 "workflow hygiene: OK" 'on: workflow_dispatch
+jobs:
+  a:
+    if: github.event_name == '\''pull_request'\''
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    steps:
+      - run: true
+        env:
+          pull_request: { x: 1 }'
+
 echo "${passed} passed, ${failed} failed"
 [ "$failed" = 0 ]

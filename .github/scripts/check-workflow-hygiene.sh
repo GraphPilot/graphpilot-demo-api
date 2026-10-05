@@ -68,8 +68,20 @@ check_pins() {
   done < <(grep -E '^[[:space:]]*-?[[:space:]]*uses:' "$file" || true)
 }
 
+# Whether the workflow runs on pull requests: `on: pull_request`, an inline list, a bare
+# `pull_request:` / `- pull_request` line, or an inline configuration (`pull_request: {}`,
+# `pull_request: { branches: [main] }`) at the trigger level of the top-level `on:` block. The
+# trigger level keeps `pull_request` as a value (`github.event_name == 'pull_request'`) or as a
+# step input out of it.
 is_pull_request_workflow() {
-  code_has "$1" '^[[:space:]]*-?[[:space:]]*pull_request(_target)?[[:space:]]*:?[[:space:]]*$|^on:.*pull_request'
+  code_has "$1" '^[[:space:]]*-?[[:space:]]*pull_request(_target)?[[:space:]]*:?[[:space:]]*$|^["'"'"']?on["'"'"']?:.*pull_request' && return 0
+  [ "$(on_block_of "$1" | awk '
+    function indent(l) { match(l, /^[ ]*/); return RLENGTH }
+    NR == 1 { next }
+    child == "" { child = indent($0) }
+    indent($0) == child && $0 ~ /^[[:space:]]*pull_request(_target)?[[:space:]]*:[[:space:]]*\{/ { hit = 1 }
+    END { print hit ? 1 : 0 }
+  ')" = 1 ]
 }
 
 # Whether any job is bound to the environment prod: `environment: prod` (plain or quoted),
