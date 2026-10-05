@@ -1,0 +1,143 @@
+name: Deploy one demo
+
+# The steps of one demo deploy, called by deploy.yml once per environment so the production and
+# the stage leg cannot drift apart. The order and the reasoning behind each step are unchanged
+# from the single-environment workflow this replaced; see README.md, "Deploying it".
+on:
+    workflow_call:
+        inputs:
+            environment:
+                description: "GitHub environment: production or stage"
+                required: true
+                type: string
+            wrangler-env:
+                description: "wrangler.jsonc environment; empty for the top-level (production) Worker"
+                required: false
+                type: string
+                default: ""
+
+jobs:
+    deploy:
+        name: Deploy to ${{ inputs.environment }}
+        runs-on: ubuntu-latest
+        environment: ${{ inputs.environment }}
+        env:
+            WRANGLER_ENV: ${{ inputs.wrangler-env }}
+        steps:
+            - uses: actions/checkout@v5
+
+            - uses: pnpm/action-setup@v4
+              with:
+                  version: 9.15.0
+
+            - uses: actions/setup-node@v5
+              with:
+                  node-version: 26
+                  cache: pnpm
+
+            - run: pnpm install --frozen-lockfile
+
+            - name: Check
+              run: |
+                  pnpm lint
+                  pnpm typecheck
+                  pnpm test
+
+            # Before anything is deployed. On the stage leg this proves the stage environment holds
+            # stage's values rather than the repository's production fallbacks
+            # (scripts/deploy-target.ts); on the production leg it changes nothing.
+            - name: Check the deploy target
+              env:
+                  TARGET_ENVIRONMENT: ${{ inputs.environment }}
+                  DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
+                  GPILOT_API_URL: ${{ vars.GPILOT_API_URL }}
+                  DEMO_JWKS_URL: ${{ vars.DEMO_JWKS_URL }}
+              run: node scripts/deploy-target.ts check
+
+            - name: Deploy the worker
+              env:
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+              run: pnpm exec wrangler deploy ${WRANGLER_ENV:+--env "$WRANGLER_ENV"}
+
+            - name: Push the worker secrets
+              env:
+                  CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+                  CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+                  SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
+                  AUTH_PRIVATE_JWK: ${{ secrets.AUTH_PRIVATE_JWK }}
+              run: |
+                  set -euo pipefail
+                  if [ -z "${SIGNING_KEY}" ]; then
+                      echo "SIGNING_KEY is empty: the origin would answer 500 to every request." >&2
+                      exit 1
+                  fi
+                  printf '%s' "${SIGNING_KEY}" | pnpm exec wrangler secret put SIGNING_KEY ${WRANGLER_ENV:+--env "$WRANGLER_ENV"}
+                  if [ -n "${AUTH_PRIVATE_JWK}" ]; then
+                      printf '%s' "${AUTH_PRIVATE_JWK}" | pnpm exec wrangler secret put AUTH_PRIVATE_JWK ${WRANGLER_ENV:+--env "$WRANGLER_ENV"}
+                  else
+                      echo "AUTH_PRIVATE_JWK not set: the Durable Object's own generated key stays in use."
+                  fi
+
+            - name: Wait for the origin
+              if: vars.ORIGIN_URL != ''
+              env:
+                  ORIGIN_URL: ${{ vars.ORIGIN_URL }}
+              run: |
+                  set -euo pipefail
+                  for attempt in 1 2 3 4 5 6 7 8 9 10; do
+                      health=$(curl -sS -o /dev/null -w '%{http_code}' "${ORIGIN_URL}/health" || echo 000)
+                      jwks=$(curl -sS -o /dev/null -w '%{http_code}' "${ORIGIN_URL}/auth/jwks.json" || echo 000)
+                      if [ "${health}" = "200" ] && [ "${jwks}" = "200" ]; then
+                          echo "origin healthy after ${attempt} attempt(s)"
+                          exit 0
+                      fi
+                      echo "attempt ${attempt}: /health answered ${health}, /auth/jwks.json answered ${jwks}"
+                      sleep 5
+                  done
+                  echo "the origin did not answer 200 on both routes; not publishing to the edge" >&2
+                  curl -sS "${ORIGIN_URL}/auth/jwks.json" | head -c 500 >&2 || true
+                  exit 1
+
+            - name: Note the skipped health gate
+              if: vars.ORIGIN_URL == ''
+              run: |
+                  echo "ORIGIN_URL is unset, so the origin was not checked before publishing to the edge."
+                  echo "Expected on the first deploy. Set the ORIGIN_URL variable to the deployed worker's address to turn the gate on."
+
+            - name: Install the gpilot CLI
+              run: |
+                  curl -fsSL get.graphpilot.io | sh
+                  echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+
+            # gpilot.toml names the production demo's key set. The stage demo publishes its own, so
+            # the stage leg publishes a copy with that one line swapped (scripts/deploy-target.ts).
+            - name: Render the edge config for this environment
+              env:
+                  TARGET_ENVIRONMENT: ${{ inputs.environment }}
+                  DEMO_JWKS_URL: ${{ vars.DEMO_JWKS_URL }}
+              run: |
+                  set -euo pipefail
+                  if [ "${TARGET_ENVIRONMENT}" = "production" ]; then
+                      cp gpilot.toml gpilot.deploy.toml
+                  else
+                      node scripts/deploy-target.ts render gpilot.toml gpilot.deploy.toml
+                  fi
+
+            - name: Publish the schema and config to the edge
+              env:
+                  GPILOT_TOKEN: ${{ secrets.GPILOT_TOKEN }}
+                  API_URL: ${{ vars.GPILOT_API_URL }}
+                  SERVICE: ${{ vars.GPILOT_SERVICE }}
+              run: |
+                  set -euo pipefail
+                  # Exported only when set: the production leg keeps the CLI's own default.
+                  if [ -n "${API_URL}" ]; then
+                      export GPILOT_API_URL="${API_URL}"
+                  fi
+                  gpilot deploy \
+                      --service "${SERVICE}" \
+                      --schema src/schema.graphql \
+                      --config gpilot.deploy.toml \
+                      --no-interactive \
+                      --yes

@@ -24,5 +24,21 @@
     // ADMIN_TOKEN       only consulted when REQUIRE_SIGNATURE is false, for a local run
     "vars": {
         "REQUIRE_SIGNATURE": "true"
+    },
+
+    // The stage platform's demo: `wrangler deploy --env stage` deploys it as
+    // graphpilot-demo-api-stage. Its own Durable Object, so its own catalogue and its own key pair,
+    // and its own SIGNING_KEY, because the stage platform issues it for the stage service. Bindings
+    // and vars do not inherit into an environment, so all three are restated.
+    "env": {
+        "stage": {
+            "durable_objects": {
+                "bindings": [{ "name": "CATALOGUE", "class_name": "CatalogueObject" }]
+            },
+            "migrations": [{ "tag": "v1", "new_sqlite_classes": ["CatalogueObject"] }],
+            "vars": {
+                "REQUIRE_SIGNATURE": "true"
+            }
+        }
     }
 }
