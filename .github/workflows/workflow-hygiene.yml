@@ -1,0 +1,37 @@
+name: Workflow hygiene
+
+# Runs .github/scripts/check-workflow-hygiene.sh (and its tests) on every pull request that
+# touches .github: runner labels from vars.RUNNER_*, actions pinned to commit SHAs, cancel on
+# pull requests, debug-profile PR builds, no prod job on a branch trigger. The script is a
+# byte-identical copy of graphpilot-platform's; change it there first.
+#
+# A workflow of its own because this repository has no other pull-request CI to carry the
+# step. Not a required check: with the paths filter it does not run on every pull request.
+
+on:
+  pull_request:
+    # `ready_for_review` gives a pull request opened as a draft its first run.
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main]
+    paths:
+      - '.github/**'
+
+concurrency:
+  group: workflow-hygiene-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  hygiene:
+    name: Workflow hygiene
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ${{ vars.RUNNER_LIGHT }}
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Check
+        run: |
+          bash .github/scripts/test-check-workflow-hygiene.sh
+          .github/scripts/check-workflow-hygiene.sh
