@@ -85,8 +85,8 @@ type Product
     # means, and a reader should not have to open `Inventory` to learn who shares this answer.
     #
     # Before that release a field hint replaced the type's as a whole, and leaving `scope` out here
-    # would have said nothing about audience. A hint that names no scope is read as private, so the
-    # whole product answer would have been stored once per caller.
+    # would have said nothing about audience. A hint that names no scope is read as PUBLIC, so a
+    # per-caller scope on the type would not have applied to this field.
     inventory: Inventory! @cacheControl(maxAge: 5, scope: PUBLIC)
 
     reviews: [Review!]!
@@ -164,7 +164,8 @@ type Activity @cacheControl(maxAge: 5, scope: PUBLIC, swr: 60) @surrogateKey(sta
     # `scope` is written here as well. Since graphpilot-proxy#488 a field hint no longer hides its
     # return type's, it is laid over it argument by argument, so an omitted scope would now be
     # taken from `ActivityEntry`. That type states none, and a hint that names no scope is read as
-    # private, so leaving this out would still give a public feed one stored entry per caller.
+    # PUBLIC, so leaving this out is safe only because the feed is public anyway. A per-caller field
+    # must say `scope: PRIVATE` itself.
     #
     # `inheritMaxAge` works here where it does not on `Category.products` above, and for exactly
     # the documented reason: `ActivityEntry` carries no `@cacheControl` at all, so there is no type

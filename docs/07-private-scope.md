@@ -65,8 +65,8 @@ uncacheable, it means one entry each.
   `gp-cache-reason: CACHE_SKIPPED_PRIVATE_WITHOUT_DISCRIMINATOR`. That is the correct refusal: with
   no subject there is no key that could safely hold the answer, so nothing is stored rather than
   something being stored under a key everyone shares.
-- Private is also the fallback. A `@cacheControl` hint naming no scope lands here, because reading
-  a missing scope as public is the mistake that leaks data, and reading it as private is the
-  mistake that costs a cache hit.
+- Private is NOT the fallback. A `@cacheControl` hint naming no scope resolves to `PUBLIC`
+  (Apollo's default), so one stored answer is shared with every caller. Anything meant for one
+  caller has to say `scope: PRIVATE` explicitly, because leaving it out leaks that caller's data.
 - One entry per person is not always what you want. When the answer is identical for a whole team,
   [a bucket](08-buckets.md) stores it once instead of once each.

@@ -53,8 +53,9 @@ filled, which is only correct because both were asking a question whose answer d
 who asked.
 
 Reverse the order and it works the same way: an anonymous reader hits the entry a signed-in one
-warmed. That symmetry is what `PUBLIC` means, and it is why the scope is a deliberate declaration
-rather than a default. A missing scope reads as private, never as public.
+warmed. That symmetry is what `PUBLIC` means. It is also what a hint with no scope means, because a
+missing scope reads as `PUBLIC` (Apollo's default). So write the scope down anyway, and anything
+meant for one caller has to say `scope: PRIVATE` itself.
 
 ## Notes
 

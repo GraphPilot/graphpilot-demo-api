@@ -44,8 +44,9 @@ prefixes = ["demo_sk_"]
 # only thing that asks for `scope: PRIVATE`, because it is the only answer that genuinely belongs
 # to one caller.
 #
-# It is also the fallback: the proxy reads a missing scope as private, not as public, so a
-# `@cacheControl` hint that names no scope lands here. Anything meant to be shared has to say so.
+# It is NOT the fallback. The proxy reads a missing scope as PUBLIC (Apollo's default), so a
+# `@cacheControl` hint that names no scope is stored once and shared with every caller. Anything
+# meant for one caller has to say `scope: PRIVATE` explicitly, or it is served to everyone.
 private = 'auth:demo.sub'
 
 # The organization bucket: one stored entry for everyone in one organization.

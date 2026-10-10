@@ -195,7 +195,7 @@ mistakes that are invisible in review and silent in production:
   logged, the cache simply never fills.
 - A **field-level `@cacheControl` that leaves out `scope`** while the type it returns states one. A
   field's hint replaces the return type's rather than merging with it, and a hint naming no scope is
-  read as private, so a public answer is stored once per caller.
+  read as PUBLIC, so an answer meant for one caller would be shared with everyone.
 
 Both have now been made in three different schemas, including this one. The test needs nothing but
 `graphql` and your SDL, and its failure message names the type, the field and the consequence. Copy

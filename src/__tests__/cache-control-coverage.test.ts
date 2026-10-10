@@ -25,7 +25,7 @@ import { typeDefs } from "../type-defs.ts";
  *
  * 2. A field-level `@cacheControl` that leaves out `scope` while the type it returns states one. A
  *    field's hint REPLACES the return type's hint rather than merging with it, and a hint that
- *    names no scope is read as private, so a public answer is quietly stored once per caller.
+ *    names no scope is read as PUBLIC, so an answer meant for one caller would be shared with everyone.
  *
  * Copy this file into your own repository. It needs nothing but `graphql` and your SDL.
  */
@@ -171,7 +171,7 @@ function shadowedScopes(sdl: string): string[] {
             [
                 `${parent.name}.${field.name} carries its own @cacheControl with no scope, while ${returns.name} declares \`scope: ${typeHint.scope}\`.`,
                 "A field's hint replaces the return type's hint instead of merging with it, so the scope on the type is not read for this field at all.",
-                "A hint that names no scope is read as PRIVATE, which stores one entry per caller for an answer meant to be shared.",
+                "A hint that names no scope is read as PUBLIC, which shares one stored entry with every caller.",
                 `Fix: write the scope on the field as well, \`@cacheControl(..., scope: ${typeHint.scope})\`.`,
             ].join("\n"),
         );
@@ -191,7 +191,7 @@ describe("the schema's cache rules", () => {
     it("never lets a field's hint drop the scope its type declares", () => {
         expect(
             shadowedScopes(typeDefs),
-            "a hint that states no scope is read as private, so a shared answer is stored per caller",
+            "a hint that states no scope is read as PUBLIC, so a per-caller answer would be shared",
         ).toEqual([]);
     });
 });
@@ -242,6 +242,6 @@ describe("the check itself", () => {
 
         expect(problems).toHaveLength(1);
         expect(problems[0]).toContain("Product.stock carries its own @cacheControl with no scope");
-        expect(problems[0]).toContain("read as PRIVATE");
+        expect(problems[0]).toContain("read as PUBLIC");
     });
 });
