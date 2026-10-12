@@ -1,6 +1,6 @@
-import type { ActivityEntry, CatalogueStore, Product } from "../store/port.ts";
+import type { ActivityEntry, Product } from "../store/port.ts";
 import { deliberateFailure, type FaultAnswer, type KeyedFaultAnswer } from "./fault.ts";
-import type { DemoContext } from "./index.ts";
+import type { DemoContext, StoreFor } from "./index.ts";
 import type { Viewer } from "./me.ts";
 
 /** The feed plus the moment the origin produced it. The wrapper exists for `observedAt`: a stale
@@ -23,30 +23,38 @@ interface Report extends Viewer {
  * non-null and the anonymous bucket is a bucket like any other. */
 const ANONYMOUS = "anonymous";
 
-export function queryResolvers(store: CatalogueStore) {
+export function queryResolvers(storeFor: StoreFor) {
     return {
         products: async (
             _root: unknown,
             args: { category?: string | null; first?: number | null; after?: string | null },
+            context: DemoContext,
         ): Promise<Product[]> => {
-            const all = await store.products(args.category ?? undefined);
+            const all = await storeFor(context).products(args.category ?? undefined);
             const start = args.after ? all.findIndex((p) => p.id === args.after) + 1 : 0;
             return all.slice(start, start + (args.first ?? 20));
         },
 
-        product: (_root: unknown, args: { id: string }) => store.product(args.id),
+        product: (_root: unknown, args: { id: string }, context: DemoContext) =>
+            storeFor(context).product(args.id),
 
-        categories: () => store.categories(),
+        categories: (_root: unknown, _args: unknown, context: DemoContext) =>
+            storeFor(context).categories(),
 
-        search: (_root: unknown, args: { term: string }) => store.search(args.term),
+        search: (_root: unknown, args: { term: string }, context: DemoContext) =>
+            storeFor(context).search(args.term),
 
         // `observedAt` is stamped here, in the resolver, and nowhere else. That is what makes a
         // stale answer legible from the outside: an entry served past its five seconds carries the
         // timestamp of the run that produced it, so an unchanged `observedAt` proves the origin was
         // not reached, and a changed one proves it was.
-        activity: async (_root: unknown, args: { first?: number | null }): Promise<Activity> => ({
+        activity: async (
+            _root: unknown,
+            args: { first?: number | null },
+            context: DemoContext,
+        ): Promise<Activity> => ({
             observedAt: new Date().toISOString(),
-            entries: await store.activity(args.first ?? 5),
+            entries: await storeFor(context).activity(args.first ?? 5),
         }),
 
         me: (_root: unknown, _args: unknown, context: DemoContext): Viewer | null => {

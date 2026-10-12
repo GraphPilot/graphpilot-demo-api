@@ -1,4 +1,5 @@
-import type { CatalogueStore, Product } from "../store/port.ts";
+import type { Product } from "../store/port.ts";
+import type { StoreFor } from "./index.ts";
 
 /** The viewer, as the resolvers pass it around: the three claims, nothing else. */
 export interface Viewer {
@@ -10,10 +11,14 @@ export interface Viewer {
 /** Deterministic per subject, so two tokens provably see two different answers and a test can say
  * which. No clock, no randomness: a private entry that changed on its own would be indistinguishable
  * from one that was not shared. */
-export function meResolvers(store: CatalogueStore) {
+export function meResolvers(storeFor: StoreFor) {
     return {
-        favourites: async (viewer: Viewer): Promise<Product[]> => {
-            const products = await store.products();
+        favourites: async (
+            viewer: Viewer,
+            _args: unknown,
+            context: unknown,
+        ): Promise<Product[]> => {
+            const products = await storeFor(context).products();
             const offset = fingerprint(viewer.id) % products.length;
             return [0, 1, 2].map(
                 (step) => products[(offset + step * 5) % products.length] as Product,
