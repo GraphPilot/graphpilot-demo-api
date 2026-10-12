@@ -39,6 +39,31 @@ allowed_audiences = ["graphpilot-demo-api"]
 type = "api_key"
 prefixes = ["demo_sk_"]
 
+# A third provider, inert on purpose, and here so the deployment report has something to redact.
+#
+# The bake redacts `auth.providers.*.public_key` and `auth.providers.*.secret`, but only where a
+# value is set. The two providers above set neither (one reads a JWKS, the other is opaque), so
+# without this the "a redacted setting is one the document names" scenario in the system tests
+# would have nothing to measure. A public key is not a secret, which is the only reason it can live
+# in this public file: it is a throwaway whose private half was never written down, so no token
+# can ever verify against it. It reads a header no request sends, so it never sees a credential,
+# adds no claim and turns nothing away; `demo` and `apikey` keep reading `Authorization` as before.
+[auth.providers.pinned]
+type = "jwt"
+header = "x-demo-pinned-token"
+allowed_algorithms = ["RS256"]
+public_key = """
+-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwdFQBCz1degkAr1ZaF0O
+dEsDy/dnGmgNkLNFchECSYWm910jY+n9CW4CYyZcBYZfCClqs32tUnUNvYDYs9Ya
+Z5S8DDZ5IUYjeUNgE1HpQ/MqzQAIYGj3M5UnWweC27sgiC2QtZo7Ea2PwHSB/Qpt
+SdswIzstMBRmMATA+qnDt2JZ9OTrvLrRTNoM+F0B9LvfA+twRtkLC6bWSjBTvl7/
++kC5bZIyHjrT67jYz1TVIi8JYDA9SRO9emxk75vpix3iYf+qQ0NRsepJTS7CngQn
+rIqG06LJ2M0grWmGxzYVaDjvAVu5YLfInM8PM6HPIfsfvdvoAI/gAD06bsNYEfFV
+yQIDAQAB
+-----END PUBLIC KEY-----
+"""
+
 [cache.policy]
 # One entry per person, keyed on the subject of a verified token. `type Me` in the schema is the
 # only thing that asks for `scope: PRIVATE`, because it is the only answer that genuinely belongs
