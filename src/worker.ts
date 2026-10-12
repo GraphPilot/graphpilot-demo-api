@@ -78,6 +78,11 @@ function keysFor(env: Env): Promise<DemoKeys> {
         return keysFromPrivateJwk(await new DurableObjectStore(env.CATALOGUE).authPrivateJwk());
     })();
     keyCache.set(cacheKey, loading);
+    // A failed load is not kept: cached, it would answer every later request of this isolate with
+    // the same rejection until the isolate is recycled, although the next attempt may well succeed.
+    loading.catch(() => {
+        if (keyCache.get(cacheKey) === loading) keyCache.delete(cacheKey);
+    });
     return loading;
 }
 
