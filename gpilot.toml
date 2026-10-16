@@ -52,6 +52,9 @@ prefixes = ["demo_sk_"]
 type = "jwt"
 header = "x-demo-pinned-token"
 allowed_algorithms = ["RS256"]
+# Required for a provider that verifies with a public key (graphpilot-proxy#604): without an
+# issuer check a token minted for another tenant of the same key would verify here.
+allowed_issuers = ["graphpilot-demo-api-pinned"]
 public_key = """
 -----BEGIN PUBLIC KEY-----
 MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwdFQBCz1degkAr1ZaF0O
