@@ -16,6 +16,8 @@ against.
 type = "jwt"
 allowed_algorithms = ["RS256"]
 jwks_url = "https://demo-api.graphpilot.cloud/auth/jwks.json"
+allowed_issuers = ["graphpilot-demo-api"]
+allowed_audiences = ["graphpilot-demo-api"]
 
 [auth.providers.apikey]
 type = "api_key"
