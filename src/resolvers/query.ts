@@ -1,3 +1,5 @@
+import type { GraphQLResolveInfo } from "graphql";
+import { paddingFor } from "../sized.ts";
 import type { ActivityEntry, Product } from "../store/port.ts";
 import { deliberateFailure, type FaultAnswer, type KeyedFaultAnswer } from "./fault.ts";
 import type { DemoContext, StoreFor } from "./index.ts";
@@ -123,5 +125,20 @@ export function queryResolvers(storeFor: StoreFor) {
             failKey: args.failKey,
             nullKey: args.nullKey,
         }),
+
+        // A body of exactly `bytes`, for the billing boundary. `nonce` is not read: it only travels
+        // in the cache key, so a run can ask for a fresh entry without changing a byte of the body.
+        // `src/sized.ts` has the arithmetic and the two things it refuses.
+        sized: (
+            _root: unknown,
+            args: { bytes: number; nonce?: string | null },
+            _context: DemoContext,
+            info: GraphQLResolveInfo,
+        ): string =>
+            paddingFor(
+                args.bytes,
+                String(info.path.key),
+                info.operation.selectionSet.selections.length,
+            ),
     };
 }

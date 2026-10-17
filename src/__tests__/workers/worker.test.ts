@@ -345,4 +345,17 @@ describe("the worker", () => {
         );
         expect(response.status).toBe(200);
     });
+
+    it("answers Query.sized with a body of exactly the bytes asked for", async () => {
+        // The Worker is what the edge talks to, so the size the billing session relies on is
+        // proved here as well as through Yoga on Node.
+        for (const bytes of [10_240, 10_241, 25_600]) {
+            const response = await call(
+                post("/graphql", { query: `query Sized { sized(bytes: ${bytes}) }` }),
+                envWith({}),
+            );
+            expect(response.status).toBe(200);
+            expect((await response.arrayBuffer()).byteLength).toBe(bytes);
+        }
+    });
 });

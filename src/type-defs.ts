@@ -384,6 +384,18 @@ type Query {
     # \`nonce\` is required here for the same reason it is on \`faulty\`: it travels in the cache key, so
     # a run addresses an entry nobody else shares.
     keyedFault(nonce: String!, failKey: Boolean! = false, nullKey: Boolean! = false): KeyedFault!
+
+    # A response body of an exact size, for the billing rule: one request unit per started 10 KiB
+    # (10,240 bytes) of the uncompressed body. The string is padded so the WHOLE body, envelope
+    # included, is \`bytes\` long, which only holds while \`sized\` is the operation's one selection, so
+    # anything beside it is refused. Printable ASCII that compresses well, so a gzip copy is visibly
+    # smaller than what is billed.
+    #
+    # Public and an hour, so the second request is an edge HIT. \`nonce\` is optional and does nothing
+    # but travel in the cache key: a new value is a new entry, and the body stays the same size.
+    sized(bytes: Int!, nonce: String): String!
+        @cacheControl(maxAge: 3600, scope: PUBLIC)
+        @surrogateKey(static: "sized")
 }
 
 ####################################################################################################
