@@ -129,10 +129,45 @@ jobs:
                   echo "ORIGIN_URL is unset, so the origin was not checked before publishing to the edge."
                   echo "Expected on the first deploy. Set the ORIGIN_URL variable to the deployed worker's address to turn the gate on."
 
+            # A pinned release, verified before any of it runs: this job goes on to hold the
+            # production GPILOT_TOKEN. It used to pipe `curl -fsSL get.graphpilot.io | sh`, which
+            # without a scheme fetched the installer over plain HTTP. The installer is not used at
+            # all now: it takes its checksum list from the same release as the archive, so it
+            # proves the download is intact, not that the release is the one GraphPilot published.
+            #
+            # SHA256SUMS.txt is checked against the hash pinned here, then the archive against
+            # SHA256SUMS.txt. To move to a newer CLI, change both values together; the hash is the
+            # `sha256sum` of that release's SHA256SUMS.txt, after checking its Sigstore signature
+            # once by hand (identity: the proxy repository's release-cli.yml at the version tag).
             - name: Install the gpilot CLI
+              env:
+                  GPILOT_VERSION: "1.0.2"
+                  GPILOT_SUMS_SHA256: f9b54f8a454fa41834cb07b81a832b1d6b976ce6668a2ba1f5448010137dbd25
               run: |
-                  curl -fsSL get.graphpilot.io | sh
+                  set -euo pipefail
+                  case "$(uname -m)" in
+                      x86_64) target="x86_64-unknown-linux-musl" ;;
+                      aarch64 | arm64) target="aarch64-unknown-linux-musl" ;;
+                      *) echo "::error::no gpilot build for runner architecture $(uname -m)"; exit 1 ;;
+                  esac
+                  asset="gpilot-cli-${GPILOT_VERSION}-${target}.tar.gz"
+                  base="https://github.com/GraphPilot/gpilot/releases/download/v${GPILOT_VERSION}"
+                  tmp="$(mktemp -d)"
+                  trap 'rm -rf "$tmp"' EXIT
+
+                  for file in SHA256SUMS.txt "$asset"; do
+                      curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fsSL \
+                          -o "${tmp}/${file}" "${base}/${file}"
+                  done
+
+                  echo "${GPILOT_SUMS_SHA256}  ${tmp}/SHA256SUMS.txt" | sha256sum --check --strict -
+                  (cd "$tmp" && grep -E "^[0-9a-f]{64}  ${asset}\$" SHA256SUMS.txt | sha256sum --check --strict -)
+
+                  tar -xzf "${tmp}/${asset}" -C "$tmp"
+                  mkdir -p "${HOME}/.local/bin"
+                  install -m 0755 "${tmp}/gpilot" "${HOME}/.local/bin/gpilot"
                   echo "${HOME}/.local/bin" >> "$GITHUB_PATH"
+                  "${HOME}/.local/bin/gpilot" --version
 
             # Schema and config in one command, which is what keeps the ordering rule satisfied
             # without anybody having to think about it: the `[[cache.policy.vary]]` entries that
