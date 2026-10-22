@@ -11,7 +11,7 @@ every caching claim on these pages is made. `ORIGIN` is this API itself, which i
 twice: to see what an unproxied answer looks like, and to reset the data.
 
 ```sh
-export EDGE=https://demo.graphpilot.cloud
+export EDGE=https://demo-api.graphpilot.cloud
 export ORIGIN=https://demo-api.graphpilot.cloud
 export SERVICE=demo
 ```
