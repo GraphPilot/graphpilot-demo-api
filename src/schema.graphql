@@ -312,6 +312,97 @@ type KeyedFault
 }
 
 ####################################################################################################
+# Unions and interfaces
+#
+# Everything above reaches an object through a field of its own type. These types exist for the
+# other way in: a field whose type is a union or an interface, where which object comes back is
+# decided per row, and so are the keys and the scope. Three small schemas, copied from the proxy's
+# own tests so a reader can put the demo's response headers beside the proxy's snapshots:
+#
+#   - LIBRARY (`library`): keys declared on a union field and an interface field, plus a key a
+#     member declares itself (graphpilot-proxy#690, #695). From `tests_surrogate_abstract_field_keys.rs`,
+#     its types prefixed `Library` so they do not collide with the second schema.
+#   - MEDIA (`media`, `book`): keys declared on the interface itself, which an implementor reached
+#     through its own type inherits from runtime 1.5.0 on (graphpilot-proxy#709).
+#   - SEARCH (`lookup`): a public union field with a private member. The member keeps the whole
+#     answer private (graphpilot-proxy#691, #694), so one caller's account is never served to another.
+#
+# Static data, no store: nothing here is written, so nothing here needs `/admin/reset`.
+####################################################################################################
+
+# A person behind a medium, as the author of a book or the director of a movie. Carries `id`, so
+# the automatic key applies: `Author:id:A1`.
+type Author @cacheControl(maxAge: 300, scope: PUBLIC) {
+    id: String!
+    name: String
+}
+
+# LIBRARY. The keys sit on the two fields of `Library`, not on the types: `media` keys every
+# medium by author and genre, and `contents` names two shapes, one that books and magazines have
+# and one that only movies have. `LibraryMovie.genre` adds the member's own key on top.
+type Library @cacheControl(maxAge: 300, scope: PUBLIC) {
+    media: [LibraryMedium!] @surrogateKey(of: "author.id genre")
+    contents: [LibraryContent!]
+        @surrogateKey(of: "author.id genre")
+        @surrogateKey(of: "director.id genre")
+}
+
+union LibraryContent @cacheControl(maxAge: 300, scope: PUBLIC) = LibraryBook | LibraryMagazine | LibraryMovie
+
+interface LibraryMedium @cacheControl(maxAge: 300, scope: PUBLIC) {
+    genre: String!
+    author: Author!
+}
+
+type LibraryBook implements LibraryMedium @cacheControl(maxAge: 300, scope: PUBLIC) {
+    genre: String!
+    author: Author!
+}
+
+type LibraryMagazine implements LibraryMedium @cacheControl(maxAge: 300, scope: PUBLIC) {
+    genre: String!
+    author: Author!
+}
+
+# Not a medium: a movie has a director, not an author, so only the second key of
+# `Library.contents` reaches it, and its own `genre` key on top.
+type LibraryMovie @cacheControl(maxAge: 300, scope: PUBLIC) {
+    genre: String! @surrogateKey
+    director: Author!
+}
+
+# MEDIA. Here the interface declares the keys, on the type and on two of its fields. Read through
+# `media` (the interface) they apply on every runtime; read through `book` (the implementor's own
+# type) only from runtime 1.5.0, which passes an interface's keys on to its implementors.
+interface Medium @cacheControl(maxAge: 300, scope: PUBLIC) @surrogateKey(of: "author.id genre") {
+    genre: String! @surrogateKey
+    author: Author! @surrogateKey(of: "id")
+}
+
+type Book implements Medium @cacheControl(maxAge: 300, scope: PUBLIC) {
+    genre: String!
+    author: Author!
+    title: String!
+}
+
+type Magazine implements Medium @cacheControl(maxAge: 300, scope: PUBLIC) {
+    genre: String!
+    author: Author!
+}
+
+# SEARCH. The caller's own account, and therefore private: one stored entry per subject, like `Me`.
+type Account @cacheControl(maxAge: 30, scope: PRIVATE) {
+    id: ID!
+    organizationId: ID!
+}
+
+# A public union with one private member. Which member comes back is decided per request, so the
+# edge cannot tell from the response which scope it needs; it has to take the narrowest of all of
+# them. Up to runtime 1.4.0 the field's PUBLIC won and an account could be stored for everyone
+# (graphpilot-proxy#691); from 1.5.0 the private member keeps the field private.
+union SearchResult = Book | Account
+
+####################################################################################################
 # Queries
 ####################################################################################################
 
@@ -393,6 +484,17 @@ type Query {
     sized(bytes: Int!, nonce: String): String!
         @cacheControl(maxAge: 3600, scope: PUBLIC)
         @surrogateKey(static: "sized")
+
+    # LIBRARY: a union field and an interface field, each with its own keys.
+    library: Library! @cacheControl(maxAge: 300, scope: PUBLIC)
+
+    # MEDIA: the interface, and one implementor reached through its own type.
+    media: [Medium!]! @cacheControl(maxAge: 300, scope: PUBLIC)
+    book: Book @cacheControl(maxAge: 300, scope: PUBLIC)
+
+    # SEARCH: the book by default, the caller's account with `account: true`. Anonymous callers get
+    # an account with the id `anonymous`, the same convention `reports` uses.
+    lookup(account: Boolean! = false): SearchResult @cacheControl(maxAge: 60, scope: PUBLIC)
 }
 
 ####################################################################################################

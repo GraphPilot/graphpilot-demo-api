@@ -3,6 +3,7 @@ import type { CatalogueStore } from "../store/port.ts";
 import { forRequest } from "../store/request-scoped-store.ts";
 import { categoryResolvers } from "./category.ts";
 import { faultResolvers, keyedFaultResolvers } from "./fault.ts";
+import { libraryQueryResolvers } from "./library.ts";
 import { meResolvers } from "./me.ts";
 import { mutationResolvers } from "./mutation.ts";
 import { productResolvers } from "./product.ts";
@@ -31,7 +32,7 @@ export type StoreFor = (context: unknown) => CatalogueStore;
 export function createResolvers(store: CatalogueStore) {
     const storeFor = forRequest(store);
     return {
-        Query: queryResolvers(storeFor),
+        Query: { ...queryResolvers(storeFor), ...libraryQueryResolvers() },
         Mutation: mutationResolvers(storeFor),
         Product: productResolvers(storeFor),
         Category: categoryResolvers(storeFor),
