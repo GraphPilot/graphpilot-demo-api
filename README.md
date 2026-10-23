@@ -42,7 +42,7 @@ The server listens on `http://localhost:4000`:
 `POST /admin/reset` is not in that list on purpose: it is a route on the Worker only. A local run
 reseeds by restarting.
 
-Node 26 or newer, which runs the TypeScript sources directly. No build step.
+Node 26.12.1 or newer, which runs the TypeScript sources directly. No build step.
 
 ### On Workers, the way it is deployed
 
@@ -93,7 +93,7 @@ Key material differs by runtime, and the difference matters:
   isolate reads that same pair back. That is correct rather than broken, which is why the variable
   is optional there. Set it anyway if you want to own the key and be able to rotate it.
 
-Self-hosting instead: the `Dockerfile` is a single `node:26-alpine` stage with no build.
+Self-hosting instead: the `Dockerfile` is a single `node:26.12.1-alpine` stage with no build.
 
 ## Point your own GraphPilot service at it
 
