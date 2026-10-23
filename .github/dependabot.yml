@@ -1,5 +1,25 @@
 version: 2
 updates:
+  # npm/pnpm dependencies (the single package at the root, pnpm-lock.yaml).
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # The self-hosting image (Dockerfile, `node:<version>-alpine`). A new Node.js tag has to move
+  # `engines.node` in package.json, `node-version` in deploy.yml and the README with it.
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 2
+
   # GitHub Actions, pinned to commit SHAs with the version in a trailing comment; Dependabot
   # proposes the next SHA.
   - package-ecosystem: "github-actions"
