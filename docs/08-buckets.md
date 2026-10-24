@@ -12,10 +12,12 @@ This takes two halves that have to agree, and the order they are written in matt
 [[cache.policy.vary]]
 name = "x-gp-organization"
 value = 'auth:demo.org_id'
+scope_only = true
 
 [[cache.policy.vary]]
 name = "x-gp-role"
 value = 'auth:demo.role'
+scope_only = true
 ```
 
 **The schema names them.** `src/schema.graphql`:
@@ -29,6 +31,12 @@ enum CacheControlScope {
 
 type Report @cacheControl(maxAge: 300, scope: ORGANIZATION) { ... }
 ```
+
+`scope_only = true` keeps the two headers inside the scope that names them. Without it every entry
+partitions every stored response, so the PUBLIC catalogue would be split per organization and role
+as well, and [one entry for everyone](06-public-scope.md) would stop being one. With it, only
+`Report` is bucketed. It is valid only because neither header reaches the origin (`pass_to_origin`
+stays at `never`), and safe only because nothing PUBLIC in this schema depends on the token.
 
 The entries may land before the schema that names them: until something names a header, deriving
 it does nothing, so a `[[cache.policy.vary]]` entry nobody uses is inert. The other order does not

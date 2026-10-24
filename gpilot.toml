@@ -92,12 +92,25 @@ private = 'auth:demo.sub'
 # The `x-` prefix is not decoration. `gp-` is the proxy's own namespace and is stripped from every
 # client request, so a bucket header named `gp-organization` could never be backed by an entry.
 #
+# `scope_only = true` is what makes that sentence true. Without it an entry partitions every stored
+# response, whether a scope names it or not, so `products` and every other PUBLIC answer would be
+# stored once per organization and role, plus once for anonymous callers, and shared only among
+# colleagues. With it, a response the schema's `@cacheControl` decided is keyed on this header only
+# when its resolved scope names it: `type Report` stays per organization and role, `Me` stays per
+# subject, and a PUBLIC answer is one entry for every caller, signed in or not. A response the
+# origin's own `Cache-Control` decided is still partitioned on both entries.
+#
+# That is only safe because the demo's PUBLIC answers really are the same for every caller. A
+# service whose PUBLIC fields read anything off the token must leave `scope_only` off.
+#
 # `pass_to_origin` is left at its default of `never`. This origin verifies the token and reads
 # `org_id` off it, so handing it a header restating a claim it already has would be one more thing
-# that can disagree with the token.
+# that can disagree with the token. It is also what lets `scope_only` through: an entry whose value
+# reaches the origin can change any response, and the deployment refuses the combination.
 [[cache.policy.vary]]
 name = "x-gp-organization"
 value = 'auth:demo.org_id'
+scope_only = true
 
 # The role, and it is here because an organization on its own is not a safe bucket.
 #
@@ -107,10 +120,11 @@ value = 'auth:demo.org_id'
 # the authorization behind it, and no finer: that is the whole rule, and `docs/08-buckets.md` shows
 # the two tokens that prove it.
 #
-# `pass_to_origin` stays `never`, for the reason the entry above gives.
+# `scope_only` and `pass_to_origin = never`, for the reasons the entry above gives.
 [[cache.policy.vary]]
 name = "x-gp-role"
 value = 'auth:demo.role'
+scope_only = true
 
 # The docs' curl examples, so a walkthrough can be told apart from whatever else is calling a
 # public demo. Every request in `docs/` sends `gp-client-name: demo-curl`, and
@@ -187,11 +201,13 @@ enabled = true
 # only those three from a client for the same reason: a `500` is the application answering, and a
 # demo that retried one would teach the wrong list.
 #
-# `retry_mutations` is left at its default of `true`, and here that is provably safe rather than
-# merely conventional. The demo's requested failure is decided in the worker before the body is
-# parsed (`src/worker.ts`), so a refused attempt never ran the mutation and sending it again is the
-# first write rather than a second one. An origin that can return a gateway status after a write has
-# already committed needs `false` instead.
+# `retry_mutations` is left unset, so mutations follow the proxy's default and are sent once
+# (`false` since graphpilot-proxy#727; earlier runtimes defaulted to `true`). For this origin `true`
+# would be provably safe rather than merely conventional: the demo's requested failure is decided in
+# the worker before the body is parsed (`src/worker.ts`), so a refused attempt never ran the
+# mutation, and sending it again would be the first write rather than a second one. The demo keeps
+# the default anyway, because a walkthrough that switched it on would teach the risky setting. The
+# retry scenarios use queries, which are retried either way.
 #
 # The delays are short on purpose. The default of a second per attempt is the right number for a
 # real origin and the wrong one for a walkthrough, where the whole sequence should fit inside a

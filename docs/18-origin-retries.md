@@ -97,11 +97,14 @@ outage became a five minute one.
 at all. A background revalidation inside the stale window is an ordinary origin request and retries
 like any other.
 
-**Mutations are retried by default.** The three retryable statuses all mean the request never
-reached the application, so the mutation never ran and sending it again is the first write rather
-than a second one. That holds exactly as far as an origin's status codes do. An origin that can
-return a gateway status *after* a write has already committed, a proxy timing out mid-commit for
-example, wants `retry_mutations = false`.
+**Mutations are not retried by default** (since graphpilot-proxy#727). Switching retries on
+repeats queries; a mutation is sent once unless `retry_mutations = true`. The three retryable
+statuses usually mean the request never reached the application, so the mutation never ran, but
+that holds exactly as far as an origin's status codes do. An origin that can return a gateway
+status *after* a write has already committed, a proxy timing out mid-commit for example, would run
+the write twice, and so would one whose mutation timed out after it acted. Turn it on only for an
+origin that answers a gateway status before it executes anything, or whose mutations are
+idempotent.
 
 **The delay is spent waiting.** `backoff` and `delay_ms` cost wall clock on the client's request,
 and they count against the 120 second budget a request may spend at the edge. A configuration whose
