@@ -22,14 +22,14 @@
     "dependencies": {
         "graphql": "17.0.2",
         "graphql-yoga": "5.24.0",
-        "jose": "^6.2.12"
+        "jose": "^6.2.13"
     },
     "devDependencies": {
-        "@biomejs/biome": "2.5.14",
-        "@cloudflare/vitest-plugin": "1.1.11",
-        "@types/node": "26.6.1",
+        "@biomejs/biome": "2.6.2",
+        "@cloudflare/vitest-plugin": "1.4.7",
+        "@types/node": "26.6.5",
         "typescript": "7.0.2",
         "vitest": "4.1.11",
-        "wrangler": "4.133.0"
+        "wrangler": "4.152.0"
     }
 }
