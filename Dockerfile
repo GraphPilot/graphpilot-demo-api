@@ -1,6 +1,6 @@
 # The self-hosting entry point. No build stage: Node 26 runs the TypeScript sources as they are,
 # so what runs in the container is the same text a reader opens in the repository.
-FROM node:26.12.1-alpine
+FROM node:26.13.0-alpine
 
 ENV NODE_ENV=production
 WORKDIR /app
