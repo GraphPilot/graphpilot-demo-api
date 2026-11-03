@@ -3,8 +3,8 @@
  *
  * `src/fault.ts` covers the origin that does not answer. This covers the origin that answers, and
  * answers with something the edge has to make a decision about: a `Cache-Control` of its own, a
- * `Set-Cookie`, a `Surrogate-Key` it invented, or nothing at all for longer than the edge is willing
- * to wait. Every one of those is a promise GraphPilot makes ("a response carrying `Set-Cookie` is
+ * `Set-Cookie`, a `Surrogate-Key` it invented, a `Vary` that partitions the entry (or, as `Vary: *`,
+ * forbids storing it), or nothing at all for longer than the edge is willing to wait. Every one of those is a promise GraphPilot makes ("a response carrying `Set-Cookie` is
  * not stored", "the origin's own `Cache-Control` is read"), and none of them could be watched
  * against this demo before, because the demo origin is well behaved by construction.
  *
@@ -66,6 +66,8 @@ const CACHE_CONTROL_HEADER = "x-demo-cache-control";
 const SET_COOKIE_HEADER = "x-demo-set-cookie";
 /** The `Surrogate-Key` the origin should put on its response, verbatim. */
 const SURROGATE_KEY_HEADER = "x-demo-surrogate-key";
+/** The `Vary` the origin should put on its response, verbatim. */
+const VARY_HEADER = "x-demo-vary";
 /** How long to wait before answering at all. */
 const DELAY_HEADER = "x-demo-delay-ms";
 /** Which request headers to echo back, comma separated, or `*` for every one that arrived. */
@@ -87,7 +89,7 @@ export const SCOPE_NONCE_MIN_LENGTH = 8;
  * store or reflect arbitrary text. */
 export const SCOPE_NONCE_MAX_LENGTH = 128;
 
-/** The longest value any of the three header levers may set. Long enough for a real
+/** The longest value any of the four header levers may set. Long enough for a real
  * `Cache-Control` or a cookie with attributes, short enough that the response stays a response. */
 export const HEADER_VALUE_MAX_LENGTH = 256;
 
@@ -152,6 +154,7 @@ export interface OriginBehaviour {
     cacheControl?: string;
     setCookie?: string;
     surrogateKey?: string;
+    vary?: string;
     /** Milliseconds to wait before the first byte. Zero when none was asked for. */
     delayMs: number;
     echo?: EchoSelection;
@@ -175,7 +178,8 @@ export function behaviourFromHeaders(headers: HeaderSource): OriginBehaviour | u
     const cacheControl = headerValue(headers, CACHE_CONTROL_HEADER);
     const setCookie = headerValue(headers, SET_COOKIE_HEADER);
     const surrogateKey = headerValue(headers, SURROGATE_KEY_HEADER);
-    if (cacheControl === null || setCookie === null || surrogateKey === null) {
+    const vary = headerValue(headers, VARY_HEADER);
+    if (cacheControl === null || setCookie === null || surrogateKey === null || vary === null) {
         return undefined;
     }
 
@@ -191,7 +195,7 @@ export function behaviourFromHeaders(headers: HeaderSource): OriginBehaviour | u
 
     // A nonce and nothing else is not a request for anything. Saying so here keeps the caller from
     // having to distinguish "scoped, no levers" from "no levers" downstream.
-    if (!cacheControl && !setCookie && !surrogateKey && delayMs === 0 && !echo) {
+    if (!cacheControl && !setCookie && !surrogateKey && !vary && delayMs === 0 && !echo) {
         return undefined;
     }
 
@@ -200,6 +204,7 @@ export function behaviourFromHeaders(headers: HeaderSource): OriginBehaviour | u
         ...(cacheControl ? { cacheControl } : {}),
         ...(setCookie ? { setCookie } : {}),
         ...(surrogateKey ? { surrogateKey } : {}),
+        ...(vary ? { vary } : {}),
         delayMs,
         ...(echo ? { echo } : {}),
     };
@@ -236,7 +241,7 @@ export function delay(ms: number): Promise<void> {
 /**
  * The response headers a scoped behaviour adds, as one record both entry points write.
  *
- * `Cache-Control`, `Set-Cookie` and `Surrogate-Key` are set to exactly what was asked for, which is
+ * `Cache-Control`, `Set-Cookie`, `Surrogate-Key` and `Vary` are set to exactly what was asked for, which is
  * the point: the demo is the origin misbehaving, so the values are not normalized, deduplicated or
  * merged with anything the framework would have sent.
  */
@@ -256,6 +261,9 @@ export function behaviourHeaders(
     }
     if (behaviour.surrogateKey) {
         headers["surrogate-key"] = behaviour.surrogateKey;
+    }
+    if (behaviour.vary) {
+        headers.vary = behaviour.vary;
     }
     if (behaviour.echo) {
         headers[ECHO_RESPONSE_HEADER] = echoOf(received, behaviour.echo);

@@ -80,6 +80,20 @@ describe("the headers that ask the origin to misbehave", () => {
         ).toEqual({ nonce: NONCE, cacheControl: "no-store", delayMs: 0 });
     });
 
+    it("takes a Vary verbatim, the wildcard included", () => {
+        // `Vary: *` is the interesting value: RFC 9111 says it never matches a later request, so the
+        // edge must not store the answer at all. A lever that refused it would hide the one case
+        // worth watching.
+        expect(
+            behaviourFromHeaders(
+                headers({ "x-demo-scope-nonce": NONCE, "x-demo-vary": "accept-language" }),
+            ),
+        ).toEqual({ nonce: NONCE, vary: "accept-language", delayMs: 0 });
+        expect(
+            behaviourFromHeaders(headers({ "x-demo-scope-nonce": NONCE, "x-demo-vary": "*" })),
+        ).toEqual({ nonce: NONCE, vary: "*", delayMs: 0 });
+    });
+
     it("refuses a nonce too short to be anyone's own", () => {
         // The scoping argument is "nobody else is sending this value". A three character nonce is
         // not that, and honouring it would let two callers collide on one entry by accident.
@@ -238,7 +252,7 @@ describe("the response headers a behaviour adds", () => {
         expect(behaviourHeaders(undefined, headers({}))).toEqual({});
     });
 
-    it("sets exactly the three values, unnormalized", () => {
+    it("sets exactly the four values, unnormalized", () => {
         // Unnormalized on purpose: the subject is an origin sending something questionable, so a
         // demo that tidied the value up would be demonstrating the tidy version.
         expect(
@@ -248,6 +262,7 @@ describe("the response headers a behaviour adds", () => {
                     cacheControl: "MAX-AGE=60,   public",
                     setCookie: "sid=abc",
                     surrogateKey: "k1 k2",
+                    vary: "Accept-Language,  x-other",
                     delayMs: 0,
                 },
                 headers({}),
@@ -256,6 +271,7 @@ describe("the response headers a behaviour adds", () => {
             "cache-control": "MAX-AGE=60,   public",
             "set-cookie": "sid=abc",
             "surrogate-key": "k1 k2",
+            vary: "Accept-Language,  x-other",
         });
     });
 });

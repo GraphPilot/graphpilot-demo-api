@@ -19,6 +19,7 @@ the first-byte timeout becomes a `502`. Four promises, and no way to see any of 
 | `x-demo-cache-control` | up to 256 printable ASCII characters | The origin sets exactly this `Cache-Control` on its response. |
 | `x-demo-set-cookie` | up to 256 printable ASCII characters | The origin sets exactly this `Set-Cookie`. |
 | `x-demo-surrogate-key` | up to 256 printable ASCII characters | The origin sets exactly this `Surrogate-Key`. |
+| `x-demo-vary` | up to 256 printable ASCII characters | The origin sets exactly this `Vary`. See [page 23](23-vary-sources-and-origin-vary.md). |
 | `x-demo-delay-ms` | `0` to `35000` | The origin waits this long before its first byte. |
 | `x-demo-echo-headers` | up to 20 header names, comma separated, or `*` | The origin reports which of those headers reached it, in `x-demo-received-headers`. |
 

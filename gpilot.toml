@@ -126,6 +126,45 @@ name = "x-gp-role"
 value = 'auth:demo.role'
 scope_only = true
 
+# A preference rather than an identity, derived from a header the caller sends, and forwarded.
+#
+# The two entries above derive from verified claims and stay at the edge. This one and the next
+# show the other half of `[[cache.policy.vary]]`: a value from a caller-controlled source (allowed
+# for a preference, never for a boundary), and a `pass_to_origin` other than `never`, so the origin
+# can be asked what it received (`docs/23-vary-sources-and-origin-vary.md`).
+#
+# `plain` sends the derived value as it is. `lower()` is there so the derived value visibly differs
+# from what the caller sent: `x-demo-edition-pref: Hardcover` reaches the origin as
+# `x-demo-edition: hardcover`, and a client-sent `x-demo-edition` never reaches it at all, because
+# configuring the entry claims the name.
+#
+# The fallback is load-bearing, the same way `|| 'en'` is in the docs' locale recipe. A rule that
+# is not `scope_only` partitions every response, and one that resolves to nothing refuses to store
+# the answer to every credentialed caller (`CACHE_SKIPPED_PRIVATE_WITHOUT_DISCRIMINATOR`), which
+# would end caching for every signed-in page in `docs/`. With it, every request that does not send
+# the preference derives `standard` and shares the entry it shared before this rule existed.
+#
+# Not `scope_only`: the deployment refuses that beside a `pass_to_origin` other than `never`.
+[[cache.policy.vary]]
+name = "x-demo-edition"
+value = "lower(header:x-demo-edition-pref) || 'standard'"
+pass_to_origin = "plain"
+
+# The cookie source, forwarded only as a keyed digest.
+#
+# An A/B bucket in a cookie, the shape of the docs' A/B recipe. `anonymized` hands the origin
+# `v1=` and an HMAC-SHA256 digest under a per-service key the origin never sees, so it can tell
+# two buckets apart without learning what they are called. `|| 'none'` for the reason above.
+#
+# `demo_ab` is deliberately NOT on `cache.cookies.allow`. Every answer this demo caches is decided
+# by the schema's `@cacheControl`, and the credentialed-request guard a non-allowed cookie trips
+# applies only to answers the origin's own `Cache-Control` decided. Allowing it would mean
+# restating the whole default list here for a property no page relies on.
+[[cache.policy.vary]]
+name = "x-demo-ab"
+value = "cookie:demo_ab || 'none'"
+pass_to_origin = "anonymized"
+
 # The docs' curl examples, so a walkthrough can be told apart from whatever else is calling a
 # public demo. Every request in `docs/` sends `gp-client-name: demo-curl`, and
 # `gpilot requests --format json` then labels it.

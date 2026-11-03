@@ -1,6 +1,6 @@
 # The scenarios
 
-Twenty-two pages, one per caching feature this demo uses. Each one says what to send, what comes
+Twenty-three pages, one per caching feature this demo uses. Each one says what to send, what comes
 back, and which response header proves it. Read them in order: the early pages establish the
 vocabulary the later ones lean on.
 
@@ -148,3 +148,4 @@ answered, you are not measuring GraphPilot's. Nothing on these pages should ever
 20. [A key field that fails](20-a-key-field-that-fails.md) - the field the edge injects to build a key, and what reaches the client when it throws.
 21. [A response of an exact size](21-exact-response-size.md) - `sized(bytes:)`, a body of exactly the bytes asked for, for the billing rule's 10 KiB boundary.
 22. [Unions and interfaces](22-unions-and-interfaces.md) - `library`, `media`, `book` and `lookup`: the keys and the scope a response gets when a field returns a union or an interface, and what runtime 1.5.0 changed.
+23. [Vary from a header, a cookie and the origin](23-vary-sources-and-origin-vary.md) - two `[[cache.policy.vary]]` entries fed by a header and a cookie, what `pass_to_origin = "plain"` and `"anonymized"` hand the origin, and the origin's own `Vary` header, `Vary: *` included.
