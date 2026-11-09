@@ -20,16 +20,16 @@
         "dev:worker": "wrangler dev"
     },
     "dependencies": {
-        "graphql": "17.0.2",
+        "graphql": "17.1.0",
         "graphql-yoga": "5.24.0",
-        "jose": "^6.2.12"
+        "jose": "^6.2.15"
     },
     "devDependencies": {
-        "@biomejs/biome": "2.5.14",
-        "@cloudflare/vitest-plugin": "1.1.11",
-        "@types/node": "26.6.1",
+        "@biomejs/biome": "2.6.6",
+        "@cloudflare/vitest-plugin": "1.6.0",
+        "@types/node": "26.6.6",
         "typescript": "7.0.2",
         "vitest": "4.1.11",
-        "wrangler": "4.133.0"
+        "wrangler": "4.158.0"
     }
 }
